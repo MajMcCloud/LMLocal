@@ -32,6 +32,12 @@ namespace LMLocal.Infrastructure.LlmApi.Provider
         LlamaCpp,
 
         /// <summary>
+        /// Unsloth backend
+        /// </summary>
+        [ProviderDisplay("Unsloth (local)")]
+        Unsloth,
+
+        /// <summary>
         /// OpenAI-compatible backend or cloud
         /// </summary>
         [ProviderDisplay("OpenAI compatible")]
@@ -59,12 +65,6 @@ namespace LMLocal.Infrastructure.LlmApi.Provider
         /// Together AI cloud
         /// </summary>
         [ProviderDisplay("Together AI (cloud)")]
-        TogetherAi,
-
-        /// <summary>
-        /// Unsloth backend
-        /// </summary>
-        [ProviderDisplay("Unsloth (local)")]
-        Unsloth
+        TogetherAi
     }
 }

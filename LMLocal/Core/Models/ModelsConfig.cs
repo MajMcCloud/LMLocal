@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
@@ -106,6 +106,12 @@ namespace LMLocal.Core.Models
         public string ReasoningEffort { get; set; }
 
         /// <summary>
+        /// Optional instruction tab id (from instructions). 
+        /// </summary>
+        [JsonProperty("instructionTabId", NullValueHandling = NullValueHandling.Ignore)]
+        public int? InstructionTabId { get; set; }
+
+        /// <summary>
         /// When true, the model is added manually and is not served by the provider.
         /// </summary>
         [JsonProperty("isCustom")]
@@ -129,6 +135,7 @@ namespace LMLocal.Core.Models
                 && ContextLength == other.ContextLength
                 && MaxTokens == other.MaxTokens
                 && string.Equals(ReasoningEffort, other.ReasoningEffort, StringComparison.OrdinalIgnoreCase)
+                && InstructionTabId == other.InstructionTabId
                 && IsCustom == other.IsCustom
                 && Enabled == other.Enabled;
         }
@@ -148,6 +155,7 @@ namespace LMLocal.Core.Models
                 hash = hash * 23 + (ContextLength.HasValue ? ContextLength.Value.GetHashCode() : 0);
                 hash = hash * 23 + (MaxTokens.HasValue ? MaxTokens.Value.GetHashCode() : 0);
                 hash = hash * 23 + (ReasoningEffort != null ? StringComparer.OrdinalIgnoreCase.GetHashCode(ReasoningEffort) : 0);
+                hash = hash * 23 + (InstructionTabId.HasValue ? InstructionTabId.Value.GetHashCode() : 0);
                 hash = hash * 23 + IsCustom.GetHashCode();
                 hash = hash * 23 + Enabled.GetHashCode();
                 return hash;

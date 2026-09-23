@@ -86,6 +86,7 @@ namespace LMLocal.Infrastructure.DependencyInjection
         /// </summary>
         private static void RegisterSettings(IServiceCollection services)
         {
+            services.AddSingleton<IInstructionDefaultsProvider, FileInstructionDefaultsProvider>();
             services.AddSingleton<IInstructionsManager, InstructionsManager>();
             services.AddSingleton<IMcpConfigManager, McpConfigManager>();
             services.AddSingleton<IProvidersConfigManager, ProvidersConfigManager>();

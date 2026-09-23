@@ -6,8 +6,24 @@ import providersStore from '@app/store/providers.store.js';
 import modelsConfigStore from '@app/store/models.config.store.js';
 import appStore from '@app/store/app.store.js';
 
-
 import { AppStatus } from '@app/store/app.status.js';
+
+/**
+ * Normalizes the raw instructions document returned by the host into a stable shape.
+ * A missing/empty document is treated as "not configured" (no tabs).
+ */
+function normalizeInstructionsDoc(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { selectedTabId: null, tabs: [] };
+    }
+
+    const tabs = Array.isArray(raw.tabs) ? raw.tabs : [];
+    const selectedTabId = raw.selectedTabId !== undefined && raw.selectedTabId !== null
+        ? raw.selectedTabId
+        : null;
+
+    return { selectedTabId, tabs };
+}
 
 class AppDataService {
     async loadModels() {
@@ -87,7 +103,6 @@ class AppDataService {
     }
 
     async updateSettingsAsync(newSettings) {
-
         const settingsState = settingsStore.getState();
         const result = await bridgeClient.updateSettingsAsync(newSettings);
 
@@ -141,17 +156,16 @@ class AppDataService {
         });
 
         try {
-            const result = await bridgeClient.getInstructionsAsync();
-            const tabs = result.tabs || result;
-            const selectedTabId = result.selectedTabId || null;
+            const raw = await bridgeClient.getInstructionsAsync();
+            const doc = normalizeInstructionsDoc(raw);
 
             instructionsStore.setState({
-                instructions: tabs,
-                selectedTabId: selectedTabId,
+                instructions: doc.tabs,
+                selectedTabId: doc.selectedTabId,
                 loading: false,
                 error: null
             });
-            return result;
+            return doc;
         } catch (error) {
             console.error('Failed to load instructions:', error);
             instructionsStore.setState({
@@ -170,20 +184,31 @@ class AppDataService {
 
         try {
             const result = await bridgeClient.updateInstructionsAsync(json);
+
+            if (result && result.success) {
+
+                try {
+                    await this.getInstructionsAsync();
+                } catch (reloadError) {
+                    console.warn('Failed to reload instructions after save:', reloadError);
+                }
+                instructionsStore.setState({ loading: false, error: null });
+                return { success: true };
+            }
+
+            const error = (result && result.error) || "Failed to update instructions";
             instructionsStore.setState({
-                instructions: json.tabs,
-                selectedTabId: json.selectedTabId || null,
                 loading: false,
-                error: null
+                error: error
             });
-            return result;
+            return { success: false, error: error };
         } catch (error) {
             console.error('Failed to update instructions:', error);
             instructionsStore.setState({
                 loading: false,
                 error: "Failed to update instructions"
             });
-            throw error;
+            return { success: false, error: error?.message || "Failed to update instructions" };
         }
     }
 
@@ -231,6 +256,7 @@ class AppDataService {
         try {
             const result = await bridgeClient.getProvidersAsync();
             const config = result.defaultProviders || result.providers ? result : { defaultProviders: [], providers: [] };
+
             const defaultProviders = config.defaultProviders || [];
             const providers = config.providers || [];
             providersStore.setState({
@@ -290,6 +316,7 @@ class AppDataService {
         try {
             const result = await bridgeClient.getModelsConfigAsync();
             const config = result && result.models ? result : { models: [] };
+
             const models = config.models || [];
             modelsConfigStore.setState({
                 models,
@@ -333,6 +360,50 @@ class AppDataService {
                 error: 'Failed to update models'
             });
             throw error;
+        }
+    }
+
+    /**
+     * Applies the instruction bound to the currently active model.
+     */
+    async applyActiveModelInstruction() {
+        try {
+            const modelId = modelStore.getState().modelId;
+            if (!modelId) return;
+
+            if (!modelsConfigStore.getState().loaded) {
+                try {
+                    await this.getModelsConfigAsync();
+                } catch (e) {
+                    return;
+                }
+            }
+
+            const models = modelsConfigStore.getState().models || [];
+            const settings = settingsStore.getState();
+            const providerType = settings.Provider;
+            const providerId = settings.ProviderId ?? null;
+
+            const model = models.find(m => m
+                && m.enabled !== false
+                && m.modelId === modelId
+                && m.providerType === providerType
+                && ((m.providerId ?? null) === providerId)
+            );
+
+            const boundId = model && model.instructionTabId;
+            if (boundId === undefined || boundId === null) return;
+
+            const tabs = instructionsStore.getState().instructions || [];
+            const tab = tabs.find(t => t && t.enabled && Number(t.id) === Number(boundId));
+            if (!tab) return;
+
+            const current = instructionsStore.getState().selectedTabId;
+            if (current === null || current === undefined || Number(current) !== Number(tab.id)) {
+                instructionsStore.setState({ selectedTabId: tab.id });
+            }
+        } catch (e) {
+            console.warn('Failed to apply active model instruction:', e);
         }
     }
 
@@ -477,7 +548,6 @@ class AppDataService {
             p => p && p.providerType && allowedTypes.includes(p.providerType.toLowerCase())
         );
     }
-
 
     async acceptFileAsync(filePath) {
         return await bridgeClient.acceptFileAsync(filePath);

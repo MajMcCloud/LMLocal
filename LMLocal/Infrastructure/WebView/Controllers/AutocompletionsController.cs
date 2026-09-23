@@ -136,18 +136,20 @@ namespace LMLocal.Infrastructure.WebView.Controllers
 
         /// <summary>
         /// Tests the FIM completion by sending a fixed prompt to the specified provider and model.
-        /// Returns { success, data } where data is the generated text.
         /// </summary>
         public async Task<string> TestCompletionAsync(string json)
         {
+            string baseUrl = null;
             try
             {
                 if (string.IsNullOrWhiteSpace(json))
-                    return new { success = false, error = "Invalid parameters" }.ToJson();
+                    return new { success = false, error = "Invalid parameters", url = (string)null }.ToJson();
 
                 var request = json.FromJson<TestCompletionRequest>();
                 if (request == null || string.IsNullOrWhiteSpace(request.ProviderType))
-                    return new { success = false, error = "Provider type is required" }.ToJson();
+                    return new { success = false, error = "Provider type is required", url = request?.BaseUrl }.ToJson();
+
+                baseUrl = request.BaseUrl;
 
                 var (success, data) = await _autocompletionsService.TestCompletionAsync(
                     request.ProviderType,
@@ -157,12 +159,12 @@ namespace LMLocal.Infrastructure.WebView.Controllers
                     CancellationToken.None
                 ).ConfigureAwait(false);
 
-                return new { success, data }.ToJson();
+                return new { success, data, url = baseUrl }.ToJson();
             }
             catch (Exception ex)
             {
                 InternalLogger.Error("TestCompletionAsync failed", ex);
-                return new { success = false, error = ex.Message }.ToJson();
+                return new { success = false, error = ex.Message, url = baseUrl }.ToJson();
             }
         }
     }

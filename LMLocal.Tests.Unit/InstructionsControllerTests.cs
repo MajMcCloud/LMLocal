@@ -1,8 +1,10 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
-using LMLocal.Infrastructure.Instructions;
+using LMLocal.Application.Abstractions.Ports;
+using LMLocal.Core.Models.Instructions;
 using LMLocal.Infrastructure.WebView.Controllers;
 using Moq;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace LMLocal.Tests.Unit
@@ -35,20 +37,35 @@ namespace LMLocal.Tests.Unit
         }
 
         [Test]
-        public async Task UpdateInstructionsAsync_ValidJson_ReturnsTrue()
+        public async Task UpdateInstructionsAsync_ValidJson_ReturnsSuccessResult()
         {
             var mock = new Mock<IInstructionsManager>();
-            mock.Setup(m => m.UpdateAsync("{\"key\":\"value\"}", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            mock.Setup(m => m.UpdateAsync("{\"key\":\"value\"}", It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult(InstructionUpdateResult.Ok()));
             var controller = new InstructionsController(mock.Object);
 
             var result = await controller.UpdateInstructionsAsync("{\"key\":\"value\"}");
 
-            Assert.That(result, Is.True);
+            Assert.That(JObject.Parse(result).Value<bool>("success"), Is.True);
             mock.Verify(m => m.UpdateAsync("{\"key\":\"value\"}", It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Test]
-        public async Task UpdateInstructionsAsync_NullOrEmpty_ReturnsFalse()
+        public async Task UpdateInstructionsAsync_ValidationFailure_ReturnsErrorResult()
+        {
+            var mock = new Mock<IInstructionsManager>();
+            mock.Setup(m => m.UpdateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult(InstructionUpdateResult.Fail("boom")));
+            var controller = new InstructionsController(mock.Object);
+
+            var payload = JObject.Parse(await controller.UpdateInstructionsAsync("{\"x\":1}"));
+
+            Assert.That(payload.Value<bool>("success"), Is.False);
+            Assert.That(payload.Value<string>("error"), Is.EqualTo("boom"));
+        }
+
+        [Test]
+        public async Task UpdateInstructionsAsync_NullOrEmpty_ReturnsFailureWithoutCallingManager()
         {
             var mock = new Mock<IInstructionsManager>();
             var controller = new InstructionsController(mock.Object);
@@ -56,13 +73,13 @@ namespace LMLocal.Tests.Unit
             var resultNull = await controller.UpdateInstructionsAsync(null);
             var resultEmpty = await controller.UpdateInstructionsAsync("");
 
-            Assert.That(resultNull, Is.False);
-            Assert.That(resultEmpty, Is.False);
+            Assert.That(JObject.Parse(resultNull).Value<bool>("success"), Is.False);
+            Assert.That(JObject.Parse(resultEmpty).Value<bool>("success"), Is.False);
             mock.Verify(m => m.UpdateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Test]
-        public async Task UpdateInstructionsAsync_WhenThrows_ReturnsFalse()
+        public async Task UpdateInstructionsAsync_WhenThrows_ReturnsFailureResult()
         {
             var mock = new Mock<IInstructionsManager>();
             mock.Setup(m => m.UpdateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Throws(new System.Exception("fail"));
@@ -70,7 +87,7 @@ namespace LMLocal.Tests.Unit
 
             var result = await controller.UpdateInstructionsAsync("{\"x\":1}");
 
-            Assert.That(result, Is.False);
+            Assert.That(JObject.Parse(result).Value<bool>("success"), Is.False);
         }
 
         [Test]

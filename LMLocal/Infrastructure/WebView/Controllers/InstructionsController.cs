@@ -1,7 +1,10 @@
 using System;
 using System.Threading.Tasks;
+using LMLocal.Application.Abstractions.Ports;
 using LMLocal.Core.Common;
-using LMLocal.Infrastructure.Instructions;
+using LMLocal.Core.Models.Instructions;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace LMLocal.Infrastructure.WebView.Controllers
 {
@@ -11,7 +14,12 @@ namespace LMLocal.Infrastructure.WebView.Controllers
     public interface IInstructionsController
     {
         Task<string> GetInstructionsAsync();
-        Task<bool> UpdateInstructionsAsync(string newInstructionsJson);
+
+        /// <summary>
+        /// Persists the full instructions document. Returns a JSON string of the shape <c>{ success: bool, error?: string }</c> so the UI can surface validation failures.
+        /// </summary>
+        Task<string> UpdateInstructionsAsync(string newInstructionsJson);
+
         Task<bool> UpdateInstructionsSelectedTabAsync(string selectedTabId);
     }
 
@@ -38,22 +46,20 @@ namespace LMLocal.Infrastructure.WebView.Controllers
             }
         }
 
-        public async Task<bool> UpdateInstructionsAsync(string newInstructionsJson)
+        public async Task<string> UpdateInstructionsAsync(string newInstructionsJson)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(newInstructionsJson))
-                {
-                    return false;
-                }
+                    return BuildResult(false, "The instructions payload is empty.");
 
-                await _instructionsManager.UpdateAsync(newInstructionsJson).ConfigureAwait(false);
-                return true;
+                InstructionUpdateResult result = await _instructionsManager.UpdateAsync(newInstructionsJson).ConfigureAwait(false);
+                return BuildResult(result.Success, result.Error);
             }
             catch (Exception ex)
             {
                 InternalLogger.Error("UpdateInstructionsAsync failed", ex);
-                return false;
+                return BuildResult(false, ex.Message);
             }
         }
 
@@ -62,9 +68,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
             try
             {
                 if (string.IsNullOrWhiteSpace(selectedTabId))
-                {
                     return false;
-                }
 
                 await _instructionsManager.UpdateSelectedTabAsync(selectedTabId).ConfigureAwait(false);
                 return true;
@@ -74,6 +78,15 @@ namespace LMLocal.Infrastructure.WebView.Controllers
                 InternalLogger.Error("UpdateInstructionsSelectedTabAsync failed", ex);
                 return false;
             }
+        }
+
+        private static string BuildResult(bool success, string error)
+        {
+            var payload = new JObject { ["success"] = success };
+            if (!success)
+                payload["error"] = string.IsNullOrWhiteSpace(error) ? "Unknown error." : error;
+
+            return payload.ToString(Formatting.None);
         }
     }
 }

@@ -1,7 +1,8 @@
-import { Icons } from '@app/constants/app.globals.js';
+import { Icons, UIText } from '@app/constants/app.globals.js';
 import { createCallback } from '@app/lib/callback.js';
 import { populateProviderSelect } from '@app/lib/populate-provider.select.js';
 import toast from '@app/lib/toast.js';
+import { buildTestFailureMessage } from '@app/lib/test-connection.message.js';
 
 export class SettingsDialog {
     constructor() {
@@ -241,14 +242,14 @@ export class SettingsDialog {
                 } else {
                     iconSlot.innerHTML = Icons.ERROR;
                     testBtn.classList.add('error');
-                    toast.show(result?.error?.message || 'Connection test failed', 'error', 4000, testBtn);
+                    toast.show(buildTestFailureMessage(result, url), 'error', 6000, testBtn);
                 }
             } catch (err) {
                 console.error('Test connection error', err);
                 if (!this.el || generation !== this._testGeneration) return;
                 iconSlot.innerHTML = Icons.ERROR;
                 testBtn.classList.add('error');
-                toast.show(err?.message || 'Connection test failed', 'error', 4000, testBtn);
+                toast.show(err?.message || UIText.CONNECTION_TEST_FAILED, 'error', 4000, testBtn);
             } finally {
                 if (!this.el || generation !== this._testGeneration) return;
                 this._testBtnTimeout = setTimeout(() => {
@@ -287,18 +288,18 @@ export class SettingsDialog {
                     iconSlot.innerHTML = Icons.SUCCESS;
                     certTestBtn.classList.add('success');
                     const thumbprint = result.thumbprint ? ' · ' + result.thumbprint : '';
-                    toast.show('Certificate valid' + thumbprint, 'success', 4000, certTestBtn);
+                    toast.show(UIText.CERTIFICATE_VALID + thumbprint, 'success', 4000, certTestBtn);
                 } else {
                     iconSlot.innerHTML = Icons.ERROR;
                     certTestBtn.classList.add('error');
-                    toast.show(result?.error?.message || 'Certificate test failed', 'error', 4000, certTestBtn);
+                    toast.show(result?.error?.message || UIText.CERTIFICATE_TEST_FAILED, 'error', 4000, certTestBtn);
                 }
             } catch (err) {
                 console.error('Test certificate error', err);
                 if (!this.el || generation !== this._certTestGeneration) return;
                 iconSlot.innerHTML = Icons.ERROR;
                 certTestBtn.classList.add('error');
-                toast.show(err?.message || 'Certificate test failed', 'error', 4000, certTestBtn);
+                toast.show(err?.message || UIText.CERTIFICATE_TEST_FAILED, 'error', 4000, certTestBtn);
             } finally {
                 if (!this.el || generation !== this._certTestGeneration) return;
                 this._certTestBtnTimeout = setTimeout(() => {
@@ -339,7 +340,6 @@ export class SettingsDialog {
                             newSettings[key] = el.value;
                         }
                     });
-
 
                     if (newSettings.Provider) {
                         const selectedOption = providerSelect.options[providerSelect.selectedIndex];

@@ -597,6 +597,41 @@ public class ProvidersTests : AppTestBase
 
     [Test]
     [Category("Providers")]
+    public async Task ProvidersDialog_TestConnectionError_WithV1Url_ShowsTip()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        // TestConnection fails and echoes a probed URL that contains "/v1".
+        await Page.EvaluateAsync(@"() => {
+            window.__settingsOverride.TestConnectionAsync = async (json) => JSON.stringify({
+                success: false,
+                error: { message: '404 Not Found' },
+                url: 'https://api.openai.com/v1'
+            });
+        }");
+
+        await OpenProvidersDialogAsync();
+        var dialog = Page.Locator("#providers-dialog");
+
+        await dialog.Locator("#provider-add-btn").ClickAsync();
+        await dialog.Locator("[data-setting='name']").FillAsync("Test Prov");
+        await dialog.Locator("[data-setting='providerType']").SelectOptionAsync("openai");
+        await dialog.Locator("[data-setting='customBaseUrl']").FillAsync("https://api.openai.com/v1");
+        await dialog.Locator("[data-setting='customApiKey']").FillAsync("key");
+
+        await dialog.Locator(".test-connection-btn").ClickAsync();
+
+        var toast = Page.Locator("#app-toast.show");
+        await Expect(toast).ToBeVisibleAsync();
+        await Expect(toast).ToContainTextAsync("404 Not Found");
+        await Expect(toast).ToContainTextAsync("https://api.openai.com/v1");
+        await Expect(toast).ToContainTextAsync("added automatically");
+    }
+
+    [Test]
+    [Category("Providers")]
     public async Task ProvidersDialog_DeprecatedProviderType_HiddenOnAdd_VisibleOnEdit()
     {
         await GotoWithMockAsync("webview-mock.js");

@@ -77,8 +77,10 @@
     <Compile Include="Application\SubAgents\SubAgentsConfigTests.cs" />
     <Compile Include="Application\SubAgents\SubAgentsRawPersistenceTests.cs" />
     <Compile Include="Application\SubAgents\SubAgentsReasoningEffortTests.cs" />
+    <Compile Include="Core\Common\ExceptionFormatterTests.cs" />
     <Compile Include="Core\Common\SourceFileExtensionsTests.cs" />
     <Compile Include="Core\MarkdownCodeBlockFormatterTests.cs" />
+    <Compile Include="Core\Models\ModelDefinitionTests.cs" />
     <Compile Include="Infrastructure\AppSettingsEqualityTests.cs" />
     <Compile Include="Infrastructure\AutocompletionsControllerTests.cs" />
     <Compile Include="Infrastructure\AzureModelResponseConverterTests.cs" />

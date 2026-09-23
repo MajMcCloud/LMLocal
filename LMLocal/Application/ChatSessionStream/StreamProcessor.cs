@@ -261,7 +261,7 @@ namespace LMLocal.Application.ChatSessionStream
             catch (Exception ex)
             {
                 InternalLogger.Error($"Error in StreamProcessor: {ex.Message}", ex);
-                result.ErrorMessage = ex.Message;
+                result.ErrorMessage = ExceptionFormatter.Format(ex);
                 result.WasCancelled = true;
             }
             finally

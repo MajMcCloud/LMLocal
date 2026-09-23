@@ -284,7 +284,7 @@
                 <div class="settings-group">
                     <label for="base-url-input" class="settings-label">API base URL</label>
                     <span class="settings-description">
-                        Base URL of your local or remote LLM server.
+                        Base URL of your local or remote LLM server. Enter the base URL without <code>/v1</code> — it is appended automatically.
                         <span style="display: block; margin-top: 6px; opacity: 0.6; font-size: 0.9em; font-style: italic;">
                             Sending requests to external endpoints (non-localhost) will transmit your prompts and data to that provider. Make sure you trust their privacy policy.
                         </span>
@@ -371,12 +371,19 @@
                 </div>
                 <div class="settings-group checkbox-group">
                     <label class="checkbox-container">
-                        <input type="checkbox" data-setting="CollapseToolCalls">
+                        <input type="checkbox" data-setting="EnableChatLogging">
                         <span class="checkbox-content-wrapper">
-                            <span class="checkbox-title">Collapse tool calls</span>
-                            <span class="checkbox-description">
-                                Groups sequential tool executions into a single compact block and collapses it when finished to reduce chat clutter.
-                            </span>
+                            <span class="checkbox-title">Save chat history</span>
+                            <span class="checkbox-description">Saves all conversations to disk. Required for session recovery. You can find logs in <code>%LOCALAPPDATA%\LMLocalChat\ChatHistory\</code></span>
+                        </span>
+                    </label>
+                </div>
+                <div class="settings-group checkbox-group">
+                    <label class="checkbox-container">
+                        <input type="checkbox" data-setting="AutoLoadLastHistory">
+                        <span class="checkbox-content-wrapper">
+                            <span class="checkbox-title">Auto-load last history on startup</span>
+                            <span class="checkbox-description">Automatically restores the most recent conversation from saved history (excluding tool execution steps).</span>
                         </span>
                     </label>
                 </div>
@@ -393,15 +400,6 @@
                 </div>
                 <div class="settings-group checkbox-group">
                     <label class="checkbox-container">
-                        <input type="checkbox" data-setting="EnableHistoryCompression">
-                        <span class="checkbox-content-wrapper">
-                            <span class="checkbox-title">Clean whitespace in history (beta)</span>
-                            <span class="checkbox-description">Collapses extra spaces, tabs, and excessive newlines in background context. All Markdown syntax is preserved. Does not affect visible chat history.</span>
-                        </span>
-                    </label>
-                </div>
-                <div class="settings-group checkbox-group">
-                    <label class="checkbox-container">
                         <input type="checkbox" data-setting="EnableHistoryCompaction">
                         <span class="checkbox-content-wrapper">
                             <span class="checkbox-title">Summarize long conversations</span>
@@ -411,19 +409,12 @@
                 </div>
                 <div class="settings-group checkbox-group">
                     <label class="checkbox-container">
-                        <input type="checkbox" data-setting="EnableChatLogging">
+                        <input type="checkbox" data-setting="CollapseToolCalls">
                         <span class="checkbox-content-wrapper">
-                            <span class="checkbox-title">Save chat history</span>
-                            <span class="checkbox-description">Saves all conversations to disk. Required for session recovery. You can find logs in <code>%LOCALAPPDATA%\LMLocalChat\ChatHistory\</code></span>
-                        </span>
-                    </label>
-                </div>
-                <div class="settings-group checkbox-group">
-                    <label class="checkbox-container">
-                        <input type="checkbox" data-setting="AutoLoadLastHistory">
-                        <span class="checkbox-content-wrapper">
-                            <span class="checkbox-title">Auto-load last history on startup</span>
-                            <span class="checkbox-description">Automatically restores the most recent conversation from saved history (excluding tool execution steps).</span>
+                            <span class="checkbox-title">Collapse tool calls</span>
+                            <span class="checkbox-description">
+                                Groups sequential tool executions into a single compact block and collapses it when finished to reduce chat clutter.
+                            </span>
                         </span>
                     </label>
                 </div>
@@ -686,7 +677,7 @@
                     <div class="settings-group">
                         <label for="settingsCustomBaseUrl" class="settings-label">API base URL</label>
                         <span class="settings-description">
-                            The full endpoint URL for the API.
+                            The full endpoint URL for the API. Enter the base URL without <code>/v1</code> — it is appended automatically.
                             <span style="display: block; margin-top: 6px; opacity: 0.8; font-size: 1em; font-style: italic;">
                                 Sending requests to external endpoints (non-localhost) will transmit your prompts and data to that provider. Make sure you trust their privacy policy.
                             </span>
@@ -824,6 +815,15 @@
                             Adjust reasoning depth for supported models (e.g., GPT-5.6 Sol, DeepSeek V4 Pro).
                         </span>
                         <select id="modelsConfigReasoningEffort" name="reasoningEffort" data-setting="reasoningEffort" class="settings-select">
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="modelsConfigInstruction" class="settings-label">Auto-apply instruction</label>
+                        <span class="settings-description">
+                            When this model is selected, the chosen instruction is applied automatically. Leave as "Not set" to keep using the globally selected instruction.
+                        </span>
+                        <select id="modelsConfigInstruction" name="instructionTabId" data-setting="instructionTabId" class="settings-select">
                         </select>
                     </div>
 

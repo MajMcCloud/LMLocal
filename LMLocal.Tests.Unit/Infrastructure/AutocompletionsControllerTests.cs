@@ -467,6 +467,72 @@ namespace LMLocal.Tests.Unit.Infrastructure
             Assert.That((string)parsed["error"], Does.Contain("connection refused"));
         }
 
+        [Test]
+        public async Task TestCompletionAsync_Success_IncludesTestedUrl()
+        {
+            var request = new TestCompletionRequest
+            {
+                ProviderType = "lmstudio",
+                BaseUrl = "http://localhost:1234",
+                ApiKey = "",
+                ModelId = "ibm/granite-4-micro"
+            };
+
+            _serviceMock
+                .Setup(m => m.TestCompletionAsync(
+                    "lmstudio", "http://localhost:1234", "", "ibm/granite-4-micro",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((true, "  return a + b;\n"));
+
+            var result = await _controller.TestCompletionAsync(request.ToJson());
+
+            var parsed = JObject.Parse(result);
+            Assert.That((bool)parsed["success"], Is.True);
+            Assert.That((string)parsed["url"], Is.EqualTo("http://localhost:1234"));
+        }
+
+        [Test]
+        public async Task TestCompletionAsync_Failure_IncludesTestedUrl()
+        {
+            var request = new TestCompletionRequest
+            {
+                ProviderType = "openai",
+                BaseUrl = "https://api.openai.com/v1",
+                ModelId = "gpt-4"
+            };
+
+            _serviceMock
+                .Setup(m => m.TestCompletionAsync(
+                    "openai", "https://api.openai.com/v1", "", "gpt-4",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((false, string.Empty));
+
+            var result = await _controller.TestCompletionAsync(request.ToJson());
+
+            var parsed = JObject.Parse(result);
+            Assert.That((bool)parsed["success"], Is.False);
+            Assert.That((string)parsed["url"], Is.EqualTo("https://api.openai.com/v1"));
+        }
+
+        [Test]
+        public async Task TestCompletionAsync_MissingProviderType_IncludesTestedUrl()
+        {
+            var request = new TestCompletionRequest
+            {
+                BaseUrl = "http://localhost:1234",
+                ModelId = "test-model"
+            };
+
+            var result = await _controller.TestCompletionAsync(request.ToJson());
+
+            var parsed = JObject.Parse(result);
+            Assert.That((string)parsed["error"], Is.EqualTo("Provider type is required"));
+            Assert.That((string)parsed["url"], Is.EqualTo("http://localhost:1234"));
+            _serviceMock.Verify(
+                m => m.TestCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
         // =========================================================================
         // Constructor guard clauses
         // =========================================================================

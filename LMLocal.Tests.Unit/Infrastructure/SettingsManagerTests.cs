@@ -58,6 +58,32 @@ namespace LMLocal.Tests.Unit.Infrastructure
         }
 
         // =========================================================================
+        // EnableHistoryCompression migration (feature removed from the UI)
+        // =========================================================================
+
+
+        [Test]
+        public async Task LoadAsync_ForceDisablesEnableHistoryCompression_WhenLegacyFileHasTrue()
+        {
+            var fs = new InMemoryFileSystem();
+            var path = "settings-legacy-compression.json";
+            var initialJson = "{\"LmStudioBaseUrl\":\"http://a\",\"EnableHistoryCompression\":true}";
+            fs.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(initialJson)).Wait();
+
+            var manager = new SettingsManager(path, fs);
+
+            var loaded = await manager.LoadAsync();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(loaded.EnableHistoryCompression, Is.False,
+                    "Legacy EnableHistoryCompression=true must be force-disabled on load.");
+                Assert.That(manager.Current.EnableHistoryCompression, Is.False);
+            });
+        }
+
+
+        // =========================================================================
         // SetAiToolsModeAsync
         // =========================================================================
 

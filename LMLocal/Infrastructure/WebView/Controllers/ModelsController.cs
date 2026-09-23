@@ -51,7 +51,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
             catch (Exception ex)
             {
                 InternalLogger.Error("ListModelsAsync failed", ex);
-                return new { Error = "Failed to list models: " + ex.Message }.ToJson();
+                return new { Error = "Failed to list models: " + ExceptionFormatter.Format(ex) }.ToJson();
             }
         }
 

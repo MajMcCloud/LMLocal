@@ -467,9 +467,7 @@ namespace LMLocal.Application.ChatSession
             SessionStateContext context,
             Func<WebView2ScriptMessage, Task> onMessage)
         {
-            var errorMsg = context.LastResult?.ErrorMessage
-                ?? context.LastException?.Message
-                ?? "Unknown error occurred";
+            var errorMsg = context.LastResult?.ErrorMessage ?? ExceptionFormatter.Format(context.LastException);
 
             await onMessage(new WebView2ScriptMessage
             {

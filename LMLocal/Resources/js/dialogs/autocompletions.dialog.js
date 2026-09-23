@@ -1,8 +1,9 @@
-﻿import { Icons } from '@app/constants/app.globals.js';
+﻿import { Icons, UIText } from '@app/constants/app.globals.js';
 import { createCallback } from '@app/lib/callback.js';
 import { AsyncGuard } from '@app/lib/async.guard.js';
 import { populateProviderSelect } from '@app/lib/populate-provider.select.js';
 import toast from '@app/lib/toast.js';
+import { buildTestFailureMessage } from '@app/lib/test-connection.message.js';
 import { escapeHtml } from '@app/lib/escape.js';
 
 export class AutocompletionsDialog {
@@ -180,7 +181,7 @@ export class AutocompletionsDialog {
         if (!container) return;
         const filtered = this._getFilteredModels();
         if (!filtered.length) {
-            container.innerHTML = '<div class="empty-placeholder"><span>No models available.</span></div>';
+            container.innerHTML = `<div class="empty-placeholder"><span>${UIText.MODELS_NONE}</span></div>`;
             return;
         }
 
@@ -330,14 +331,14 @@ export class AutocompletionsDialog {
                 } else {
                     testBtn.innerHTML = `${Icons.ERROR} <span>Test</span>`;
                     testBtn.classList.add('error');
-                    toast.show(result?.error?.message || 'Connection test failed', 'error', 4000, testBtn);
+                    toast.show(buildTestFailureMessage(result, provider.customBaseUrl), 'error', 6000, testBtn);
                 }
             } catch (err) {
                 console.error('Test autocomplete error', err);
                 if (!this.el || generation !== this._testGeneration) return;
                 testBtn.innerHTML = `${Icons.ERROR} <span>Test</span>`;
                 testBtn.classList.add('error');
-                toast.show(err?.message || 'Connection test failed', 'error', 4000, testBtn);
+                toast.show(err?.message || UIText.CONNECTION_TEST_FAILED, 'error', 4000, testBtn);
             } finally {
                 if (!this.el || generation !== this._testGeneration) return;
                 this._testBtnTimeout = setTimeout(() => { this._resetTestButton(); this._testBtnTimeout = null; }, 3000);

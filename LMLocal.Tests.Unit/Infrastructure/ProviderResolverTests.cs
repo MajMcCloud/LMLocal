@@ -29,6 +29,7 @@ namespace LMLocal.Tests.Unit.Infrastructure
         [TestCase("gemini", "Gemini")]
         [TestCase("githubmodelsazure", "GithubModelsAzure")]
         [TestCase("llamacpp", "LlamaCpp")]
+        [TestCase("unsloth", "Unsloth")]
         public void ResolveProvider_ReturnsExpected_ForProviderNames(string providerName, string expectedName)
         {
             var p = ProviderResolver.ResolveProvider(providerName);
@@ -42,7 +43,6 @@ namespace LMLocal.Tests.Unit.Infrastructure
             var types = ProviderResolver.GetProviderTypes();
 
             Assert.That(types, Is.Not.Null);
-            Assert.That(types.Count, Is.EqualTo(9));
 
             var enumValues = Enum.GetValues(typeof(ModelProvider)).Cast<ModelProvider>().ToList();
             Assert.That(types.Count, Is.EqualTo(enumValues.Count));
@@ -67,6 +67,7 @@ namespace LMLocal.Tests.Unit.Infrastructure
             AssertDisplayName(types, "ollama", "Ollama (local)");
             AssertDisplayName(types, "jan", "Jan (local)");
             AssertDisplayName(types, "llamacpp", "Llama.cpp (local)");
+            AssertDisplayName(types, "unsloth", "Unsloth (local)");
             AssertDisplayName(types, "openai", "OpenAI compatible");
             AssertDisplayName(types, "togetherai", "Together AI (cloud)");
             AssertDisplayName(types, "deepseek", "DeepSeek (cloud)");
@@ -90,6 +91,7 @@ namespace LMLocal.Tests.Unit.Infrastructure
                 $"Wrong display name for '{key}'");
         }
 
+        [Test]
         public void GetDisplayName_ReturnsAttributeValue_ForAllEnumValues()
         {
             foreach (ModelProvider mp in Enum.GetValues(typeof(ModelProvider)))

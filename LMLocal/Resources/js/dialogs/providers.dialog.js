@@ -1,6 +1,7 @@
-import { Icons } from '@app/constants/app.globals.js';
+import { Icons, UIText } from '@app/constants/app.globals.js';
 import { createCallback } from '@app/lib/callback.js';
 import toast from '@app/lib/toast.js';
+import { buildTestFailureMessage } from '@app/lib/test-connection.message.js';
 
 const DEPRECATED_PROVIDER_TYPES = new Set(['githubmodelsazure']);
 
@@ -193,8 +194,8 @@ export class ProvidersDialog {
             emptyMsg.id = 'providers-empty-state';
             const filterActive = this._filterText.trim() !== '';
             emptyMsg.innerHTML = filterActive
-                ? '<span>No providers match the current filter.</span>'
-                : '<span>No custom providers added yet. Click "+ Add Profile" to create one.</span>';
+                ? `<span>${UIText.PROVIDERS_EMPTY_FILTERED}</span>`
+                : `<span>${UIText.PROVIDERS_EMPTY}</span>`;
             listContainer.appendChild(emptyMsg);
             return;
         }
@@ -323,7 +324,6 @@ export class ProvidersDialog {
         this._renderList();
     }
 
-
     _showSaveError(message) {
         toast.show(message, 'error', 4000, this.el?.confirmBtn);
     }
@@ -431,14 +431,14 @@ export class ProvidersDialog {
                     iconSlot.innerHTML = Icons.ERROR;
                     testBtn.classList.add('error');
 
-                    toast.show(result?.error?.message || 'Connection test failed', 'error', 4000, testBtn);
+                    toast.show(buildTestFailureMessage(result, url), 'error', 6000, testBtn);
                 }
             } catch (err) {
                 console.error('Test connection error', err);
                 if (!this.el || generation !== this._testGeneration) return;
                 iconSlot.innerHTML = Icons.ERROR;
                 testBtn.classList.add('error');
-                toast.show(err?.message || 'Connection test failed', 'error', 4000, testBtn);
+                toast.show(err?.message || UIText.CONNECTION_TEST_FAILED, 'error', 4000, testBtn);
             } finally {
                 if (!this.el || generation !== this._testGeneration) return;
                 this._testBtnTimeout = setTimeout(() => {
@@ -477,7 +477,7 @@ export class ProvidersDialog {
                     if (!this.el) return;
                     if (!(result && result.success)) {
                         console.error('Failed to save providers', result?.error);
-                        this._showSaveError(result?.error?.message || 'Failed to save providers');
+                        this._showSaveError(result?.error?.message || UIText.PROVIDERS_SAVE_FAILED);
                         return;
                     }
                     this._cleanup();
@@ -486,7 +486,7 @@ export class ProvidersDialog {
                 } catch (err) {
                     console.error('Failed to save providers', err);
                     if (!this.el) return;
-                    this._showSaveError(err?.message || 'Failed to save providers');
+                    this._showSaveError(err?.message || UIText.PROVIDERS_SAVE_FAILED);
                 }
             };
 

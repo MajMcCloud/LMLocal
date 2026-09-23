@@ -74,8 +74,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
         }
 
         /// <summary>
-        /// Updates only the AI Tools settings (EnableAiTools / EnableAiWriteTools).
-        /// Expects JSON: { "mode": "none" | "readonly" | "readwrite" }.
+        /// Updates only the AI Tools settings (EnableAiTools / EnableAiWriteTools). Expects JSON: { "mode": "none" | "readonly" | "readwrite" }
         /// </summary>
         public async Task<bool> SetAiToolsAsync(string json)
         {
@@ -99,8 +98,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
         }
 
         /// <summary>
-        /// Updates only the Sub Agents setting (EnableSubAgents).
-        /// Expects JSON: { "enabled": true | false }.
+        /// Updates only the Sub Agents setting (EnableSubAgents). Expects JSON: { "enabled": true | false }
         /// </summary>
         public async Task<bool> SetSubAgentsAsync(string json)
         {
@@ -132,7 +130,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
 
                 var request = payload.FromJson<TestConnectionRequest>();
                 if (request == null || string.IsNullOrWhiteSpace(request.Provider) || string.IsNullOrWhiteSpace(request.Url))
-                    return ErrorResponse("Provider and URL are required");
+                    return ErrorResponse("Provider and URL are required", request?.Url);
 
                 var requestTimeout = _settingsManager.RequestTimeoutSeconds;
                 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(requestTimeout)))
@@ -148,7 +146,8 @@ namespace LMLocal.Infrastructure.WebView.Controllers
                     return new TestConnectionResponse
                     {
                         Success = result.Success,
-                        Error = result.Error == null ? null : new ErrorInfo { Message = result.Error }
+                        Error = result.Error == null ? null : new ErrorInfo { Message = result.Error },
+                        Url = request.Url
                     }.ToJson();
                 }
             }
@@ -191,12 +190,13 @@ namespace LMLocal.Infrastructure.WebView.Controllers
         /// <summary>
         /// Builds a failure response matching the frontend contract: error is an object with a "message" property (the toast in settings.dialog.js reads result.error.message).
         /// </summary>
-        private static string ErrorResponse(string message)
+        private static string ErrorResponse(string message, string url = null)
         {
             return new TestConnectionResponse
             {
                 Success = false,
-                Error = new ErrorInfo { Message = message }
+                Error = new ErrorInfo { Message = message },
+                Url = url
             }.ToJson();
         }
     }

@@ -21,6 +21,7 @@ export function createModelSelectorDialog(models, activeModel = null, supportsIs
                 selectedModel.supportsMaxTokens,
                 selectedModel.maxTokens || 0,
             );
+            await appDataService.applyActiveModelInstruction();
             return true;
         }
         return false;

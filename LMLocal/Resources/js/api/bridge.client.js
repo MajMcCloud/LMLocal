@@ -328,7 +328,22 @@ class BridgeClient {
 
     async updateInstructionsAsync(instructions) {
         const payload = JSON.stringify(instructions);
-        return await this._callInstructions("UpdateInstructionsAsync", payload);
+        const res = await this._callInstructions("UpdateInstructionsAsync", payload);
+
+        if (typeof res === 'string') {
+            try {
+                return JSON.parse(res);
+            } catch (e) {
+                return { success: false, error: 'Invalid response from host.' };
+            }
+        }
+        if (res === true) {
+            return { success: true };
+        }
+        if (res === false) {
+            return { success: false, error: 'Failed to update instructions.' };
+        }
+        return res;
     }
 
     async updateInstructionsSelectedTabAsync(selectedTabId) {

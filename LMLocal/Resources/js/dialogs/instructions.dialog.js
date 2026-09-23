@@ -1,179 +1,111 @@
 import { createCallback } from '@app/lib/callback.js';
+import { Icons } from '@app/constants/app.globals.js';
 
-class InstructionsModeManager {
-    constructor() {
-        this.modes = [];
-    }
+/**
+ * URL of the built-in default tabs.
+ */
+const DEFAULTS_URL = 'https://app.local/json/instruction-tabs.json';
 
-    async load() {
-        const response = await fetch('https://app.local/json/instruction-tabs.json');
-        const data = await response.json();
-        this.modes = data.tabs || [];
-    }
+const USER_TAB_ID_START = 50;
+const MAX_USER_TABS = 50;
+const NEW_TAB_NAME = 'New Tab';
+const DEFAULT_TEMPERATURE = 0.5;
 
-    getAllModes() {
-        return this.modes;
-    }
-
-    getModeConfig(id) {
-        return this.modes.find(m => m.id === id);
-    }
-}
-
-class InstructionsDataManager {
-    constructor() {
-        this.tabStates = {};
-        this.modeManager = null;
-    }
-
-    async loadDefaults() {
-        if (!this.modeManager) {
-            this.modeManager = new InstructionsModeManager();
-            await this.modeManager.load();
+/**
+ * Loads the built-in instruction tabs.
+ */
+async function loadDefaultTabs() {
+    const result = [];
+    try {
+        const response = await fetch(DEFAULTS_URL);
+        if (!response || !response.ok) {
+            return result;
         }
 
-        const allModes = this.modeManager.getAllModes();
-        allModes.forEach(modeConfig => {
-            this.tabStates[modeConfig.id] = {
-                enabled: modeConfig.enabled !== false,
-                prompt: modeConfig.prompt || '',
-                temperature: modeConfig.temperature !== undefined ? modeConfig.temperature : 0.5
-            };
-        });
+        const data = await response.json();
+        const tabs = Array.isArray(data?.tabs) ? data.tabs : [];
+
+        for (const tab of tabs) {
+            if (!tab || tab.id === undefined || tab.id === null || !tab.displayName) continue;
+            result.push({
+                id: String(tab.id),
+                displayName: String(tab.displayName),
+                enabled: tab.enabled !== false,
+                temperature: tab.temperature !== undefined ? tab.temperature : DEFAULT_TEMPERATURE,
+                prompt: tab.prompt || ''
+            });
+        }
+    } catch (error) {
+        console.warn('Failed to load instruction defaults:', error);
     }
 
-    initializeFromSaved(saved) {
-        if (!saved) return;
-
-        const arr = Array.isArray(saved) ? saved : (Array.isArray(saved.tabs) ? saved.tabs : null);
-        if (!arr) return;
-
-        arr.forEach(tabObj => {
-            const tabId = tabObj && (tabObj.id || tabObj.name);
-            if (!tabId) return;
-
-            this.tabStates[tabId] = {
-                enabled: tabObj.enabled !== false,
-                prompt: tabObj.prompt !== undefined ? tabObj.prompt : (this.tabStates[tabId]?.prompt || ''),
-                temperature: tabObj.temperature !== undefined ? tabObj.temperature : (this.tabStates[tabId]?.temperature || 0.5)
-            };
-        });
-    }
-
-    getTabState(tabId) {
-        return this.tabStates[tabId] || { enabled: true, prompt: '', temperature: 0.5 };
-    }
-
-    setTabState(tabId, state) {
-        this.tabStates[tabId] = state;
-    }
-
-    mergeAllTabStates() {
-        const allModes = this.modeManager.getAllModes();
-        const result = allModes.map(modeConfig => {
-            const state = this.tabStates[modeConfig.id] || {
-                enabled: modeConfig.enabled !== false,
-                prompt: modeConfig.prompt || '',
-                temperature: modeConfig.temperature !== undefined ? modeConfig.temperature : 0.5
-            };
-
-            return {
-                id: modeConfig.id,
-                displayName: modeConfig.displayName,
-                enabled: !!state.enabled,
-                prompt: state.prompt,
-                temperature: state.temperature
-            };
-        });
-
-        return { tabs: result };
-    }
+    return result;
 }
 
 export class InstructionsDialog {
     constructor() {
-        this.dataManager = new InstructionsDataManager();
-        this._abortController = null;
         this.onLoad = createCallback();
         this.onSave = createCallback();
+
+        this._tabs = [];                 // draft model: full list of tabs
+        this._defaultIds = new Set();    // ids of built-in tabs (read-only names, not deletable)
+        this._activeId = null;
+
+        this._abortController = null;
+        this._dialog = null;
+        this._sidebar = null;
+        this._body = null;
+        this._errorEl = null;
     }
 
     async show() {
         const dialog = document.getElementById('instructions-dialog');
         if (!dialog) throw new Error('Dialog #instructions-dialog not found');
 
-        const body = dialog.querySelector('.modal-body');
+        this._dialog = dialog;
+        this._sidebar = dialog.querySelector('.settings-sidebar');
+        this._body = dialog.querySelector('.modal-body');
         const confirmBtn = dialog.querySelector('#instructions-dialog-confirm');
         const cancelBtn = dialog.querySelector('#instructions-dialog-cancel');
 
-        if (!body || !confirmBtn || !cancelBtn) {
-            throw new Error('Missing elements in dialog');
+        if (!this._sidebar || !this._body || !confirmBtn || !cancelBtn) {
+            throw new Error('Missing elements in instructions dialog');
         }
 
-        try {
-            this._abortController?.abort();
-            this._abortController = new AbortController();
+        this._abortController?.abort();
+        this._abortController = new AbortController();
+        this._ensureErrorElement();
 
-            await this.dataManager.loadDefaults();
-
-            const result = await this.onLoad.emitResult();
-            const savedJson = result.success ? result.data : null;
-            this.dataManager.initializeFromSaved(savedJson);
-
-            await this._setupTabs(body);
-        } catch (error) {
-            console.error('Failed to populate instructions dialog:', error);
-        }
+        await this._loadDraft();
+        this._render();
 
         return new Promise((resolve) => {
             dialog.showModal();
 
-            const onConfirm = async () => {
-                try {
-                    const currentTab = dialog.querySelector('.tab-btn.active').getAttribute('data-target');
-                    this._saveTabState(currentTab, body);
-
-                    const merged = this.dataManager.mergeAllTabStates();
-                    merged.selectedTabId = currentTab;
-
-                    const result = await this.onSave.emitResult(merged);
-
-                    if (result.success) {
-                        this._abortController?.abort();
-                        this._abortController = null;
-                        this.onLoad.off();
-                        this.onSave.off();
-                        dialog.close();
-                        resolve(true);
-
-                    } else {
-                        console.error('Failed to save instructions', result.error);
-                        this._abortController?.abort();
-                        this._abortController = null;
-                        this.onLoad.off();
-                        this.onSave.off();
-                        dialog.close();
-                        resolve(false);
-                        return;
-                    }
-
-                } catch (error) {
-                    console.error('Error saving instructions:', error);
-                    this._abortController?.abort();
-                    this._abortController = null;
-                    this.onLoad.off();
-                    this.onSave.off();
-                    dialog.close();
-                    resolve(false);
-                    return;
-                }
-            };
-
-            const onCancel = () => {
+            const cleanup = () => {
                 this._abortController?.abort();
                 this._abortController = null;
                 this.onLoad.off();
                 this.onSave.off();
+            };
+
+            const onConfirm = async () => {
+                const document = this._collect();
+                const result = await this.onSave.emitResult(document);
+
+                if (result && result.success) {
+                    cleanup();
+                    dialog.close();
+                    resolve(true);
+                    return;
+                }
+
+                const message = result?.error?.message || result?.error || 'Failed to save instructions.';
+                this._showError(message);
+            };
+
+            const onCancel = () => {
+                cleanup();
                 dialog.close();
                 resolve(false);
             };
@@ -181,119 +113,384 @@ export class InstructionsDialog {
             confirmBtn.addEventListener('click', onConfirm, { signal: this._abortController?.signal });
             cancelBtn.addEventListener('click', onCancel, { signal: this._abortController?.signal });
             dialog.addEventListener('close', onCancel, { signal: this._abortController?.signal });
-
         });
     }
 
-    async _setupTabs(body) {
-        const sidebar = body.parentElement.querySelector('.settings-sidebar');
-        if (!sidebar) {
-            console.error('Settings sidebar not found');
-            return;
+    async _loadDraft() {
+        const [defaults, saved] = await Promise.all([
+            loadDefaultTabs(),
+            this._loadSaved()
+        ]);
+
+        this._defaultIds = new Set(defaults.map(t => t.id));
+
+        const byId = new Map();
+        for (const tab of defaults) {
+            byId.set(tab.id, { ...tab });
+        }
+        for (const tab of saved.tabs) {
+            if (byId.has(tab.id)) {
+                const base = byId.get(tab.id);
+                byId.set(tab.id, {
+                    ...base,
+                    enabled: tab.enabled !== undefined ? !!tab.enabled : base.enabled,
+                    temperature: tab.temperature !== undefined ? tab.temperature : base.temperature,
+                    prompt: tab.prompt !== undefined ? tab.prompt : base.prompt
+                });
+            } else {
+                byId.set(tab.id, { ...tab });
+            }
         }
 
+        const userTabs = [...byId.values()]
+            .filter(t => !this._defaultIds.has(t.id))
+            .sort((a, b) => Number(a.id) - Number(b.id));
+
+        this._tabs = [
+            ...defaults.map(d => byId.get(d.id)),
+            ...userTabs
+        ];
+
+        const requestedActive = saved.selectedTabId !== undefined && saved.selectedTabId !== null
+            ? String(saved.selectedTabId)
+            : null;
+        const activeExists = requestedActive && this._tabs.some(t => t.id === requestedActive);
+
+        this._activeId = activeExists
+            ? requestedActive
+            : (this._tabs[0]?.id ?? null);
+    }
+
+    async _loadSaved() {
+        try {
+            const result = await this.onLoad.emitResult();
+            if (!result || !result.success || !result.data) {
+                return { tabs: [], selectedTabId: null };
+            }
+
+            const document = result.data;
+            const tabs = Array.isArray(document.tabs) ? document.tabs : [];
+
+            return {
+                tabs: tabs.map(t => ({
+                    id: String(t.id),
+                    displayName: t.displayName || ('Custom ' + t.id),
+                    enabled: t.enabled !== false,
+                    temperature: t.temperature !== undefined ? t.temperature : DEFAULT_TEMPERATURE,
+                    prompt: t.prompt || ''
+                })),
+                selectedTabId: document.selectedTabId
+            };
+        } catch (error) {
+            console.warn('Failed to load saved instructions:', error);
+            return { tabs: [], selectedTabId: null };
+        }
+    }
+
+    _render() {
+        this._renderSidebar();
+        this._renderActiveTab();
+        this._clearError();
+    }
+
+    _renderSidebar() {
+        const sidebar = this._sidebar;
         sidebar.innerHTML = '';
 
-        const allModes = this.dataManager.modeManager.getAllModes();
-        allModes.forEach((modeConfig, index) => {
+        for (const tab of this._tabs) {
             const button = document.createElement('button');
-            button.className = 'tab-btn' + (index === 0 ? ' active' : '');
-            button.setAttribute('data-target', modeConfig.id);
-            button.textContent = modeConfig.displayName;
-
-            button.addEventListener('click', () => {
-                const currentActiveTab = sidebar.querySelector('.tab-btn.active');
-                const currentTarget = currentActiveTab?.getAttribute('data-target');
-
-                if (currentTarget) {
-                    this._saveTabState(currentTarget, body);
-                }
-
-                sidebar.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-                button.classList.add('active');
-
-                this._renderTab(body, modeConfig.id);
-            }, { signal: this._abortController?.signal });
-
+            button.className = 'tab-btn' + (tab.id === this._activeId ? ' active' : '') + (tab.enabled ? '' : ' inactive');
+            button.setAttribute('data-target', tab.id);
+            button.textContent = tab.displayName;
+            button.addEventListener('click', () => this._selectTab(tab.id), { signal: this._abortController?.signal });
             sidebar.appendChild(button);
-        });
-
-        if (allModes.length > 0) {
-            this._renderTab(body, allModes[0].id);
         }
+
+        const userTabCount = this._tabs.filter(t => !this._defaultIds.has(t.id)).length;
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'tab-btn';
+        addBtn.textContent = '+ Add';
+        addBtn.disabled = userTabCount >= MAX_USER_TABS;
+        addBtn.title = addBtn.disabled
+            ? `Maximum of ${MAX_USER_TABS} custom instructions reached`
+            : 'Add instruction';
+        if (addBtn.disabled) {
+            addBtn.style.opacity = '0.5';
+            addBtn.style.cursor = 'default';
+        }
+        addBtn.addEventListener('click', () => {
+            if (!addBtn.disabled) this._addTab();
+        }, { signal: this._abortController?.signal });
+        sidebar.appendChild(addBtn);
     }
 
-    _renderTab(container, tabId) {
-        container.innerHTML = '';
+    _renderActiveTab() {
+        const body = this._body;
+        body.innerHTML = '';
 
-        const modeConfig = this.dataManager.modeManager.getModeConfig(tabId);
-        const tabState = this.dataManager.getTabState(tabId);
+        const tab = this._tabs.find(t => t.id === this._activeId);
+        if (!tab) return;
+
+        const isUserTab = !this._defaultIds.has(tab.id);
 
         const section = document.createElement('section');
-        section.className = 'tab-content';
+        section.className = 'tab-content active';
 
-        const headerHtml = `<label class="group-header-row" for="enabled-${tabId}">
-            <span class="settings-label">${escapeHtml(modeConfig.displayName)} Instructions</span>
-            <input type="checkbox" name="enabled-${tabId}" id="enabled-${tabId}" data-field="enabled" ${tabState.enabled ? 'checked' : ''}>
-           </label>
-           <div class="checkbox-description header-desc">Enable this mode to make it available for quick selection via the mode dropdown in the chat bar.</div>`;
+        const header = document.createElement('div');
+        header.className = 'group-header-row';
 
-        section.innerHTML = headerHtml;
+        const title = document.createElement('label');
+        title.className = 'header-title';
+        title.setAttribute('for', `enabled-${tab.id}`);
+
+        const label = document.createElement('span');
+        label.className = 'settings-label';
+        label.textContent = `${tab.displayName} Instructions`;
+        title.appendChild(label);
+        header.appendChild(title);
+
+        const actions = document.createElement('span');
+        actions.className = 'header-actions';
+
+        const enabledCheckbox = document.createElement('input');
+        enabledCheckbox.type = 'checkbox';
+        enabledCheckbox.setAttribute('data-field', 'enabled');
+        enabledCheckbox.id = `enabled-${tab.id}`;
+        enabledCheckbox.checked = !!tab.enabled;
+        actions.appendChild(enabledCheckbox);
+
+        if (isUserTab) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'tab-delete-btn';
+            deleteBtn.title = 'Remove instruction';
+            deleteBtn.setAttribute('aria-label', 'Remove instruction');
+            deleteBtn.innerHTML = Icons.REMOVE;
+            deleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this._deleteTab(tab.id);
+            }, { signal: this._abortController?.signal });
+            actions.appendChild(deleteBtn);
+        }
+
+        header.appendChild(actions);
+        section.appendChild(header);
+
+        const headerDesc = document.createElement('div');
+        headerDesc.className = 'checkbox-description header-desc';
+        headerDesc.textContent = 'Enable this mode to make it available for quick selection via the mode dropdown in the chat bar.';
+        section.appendChild(headerDesc);
 
         const fieldsWrapper = document.createElement('div');
         fieldsWrapper.className = 'tab-fields-body';
         fieldsWrapper.style.transition = 'opacity 0.2s ease';
         section.appendChild(fieldsWrapper);
 
+        if (isUserTab) {
+            const nameGroup = document.createElement('div');
+            nameGroup.className = 'settings-group';
+
+            const nameLabel = document.createElement('label');
+            nameLabel.className = 'settings-label';
+            nameLabel.setAttribute('for', `name-${tab.id}`);
+            nameLabel.textContent = 'Name';
+
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'temperature-input';
+            nameInput.style.width = '100%';
+            nameInput.setAttribute('data-field', 'displayName');
+            nameInput.id = `name-${tab.id}`;
+            nameInput.value = tab.displayName;
+            nameInput.addEventListener('input', () => {
+                tab.displayName = nameInput.value;
+                const display = nameInput.value.trim() || NEW_TAB_NAME;
+                label.textContent = `${display} Instructions`;
+                const sideBtn = this._sidebar.querySelector(`.tab-btn[data-target="${tab.id}"]`);
+                if (sideBtn) sideBtn.textContent = display;
+            }, { signal: this._abortController?.signal });
+
+            nameGroup.appendChild(nameLabel);
+            nameGroup.appendChild(nameInput);
+            fieldsWrapper.appendChild(nameGroup);
+        }
+
         const promptGroup = document.createElement('div');
         promptGroup.className = 'settings-group';
-        promptGroup.innerHTML = `
-        <label class="settings-label" for="prompt-${tabId}">System prompt</label>
-        <div class="checkbox-description">Defines the AI's core persona, behavior, processing rules, and operational constraints.</div>
-        <textarea data-field="prompt" name="prompt-${tabId}" id="prompt-${tabId}" class="prompt-textarea"></textarea>`;
 
-        promptGroup.querySelector('textarea').value = tabState.prompt;
+        const promptLabel = document.createElement('label');
+        promptLabel.className = 'settings-label';
+        promptLabel.setAttribute('for', `prompt-${tab.id}`);
+        promptLabel.textContent = 'System prompt';
+
+        const promptDesc = document.createElement('div');
+        promptDesc.className = 'checkbox-description';
+        promptDesc.textContent = "Defines the AI's core persona, behavior, processing rules, and operational constraints.";
+
+        const promptTextarea = document.createElement('textarea');
+        promptTextarea.setAttribute('data-field', 'prompt');
+        promptTextarea.id = `prompt-${tab.id}`;
+        promptTextarea.className = 'prompt-textarea';
+        promptTextarea.value = tab.prompt || '';
+
+        promptGroup.appendChild(promptLabel);
+        promptGroup.appendChild(promptDesc);
+        promptGroup.appendChild(promptTextarea);
         fieldsWrapper.appendChild(promptGroup);
 
         const tempGroup = document.createElement('div');
         tempGroup.className = 'settings-group';
-        tempGroup.innerHTML = `
-        <label class="settings-label" for="temperature-${tabId}">Temperature</label>
-        <div class="checkbox-description">Controls response variability: 0 is completely deterministic and focused, while 1 introduces maximum randomness and creativity.</div>
-        <input type="number" data-field="temperature" name="temperature-${tabId}" id="temperature-${tabId}" class="temperature-input" min="0" max="1" step="0.05" value="${tabState.temperature}">`;
 
+        const tempLabel = document.createElement('label');
+        tempLabel.className = 'settings-label';
+        tempLabel.setAttribute('for', `temperature-${tab.id}`);
+        tempLabel.textContent = 'Temperature';
+
+        const tempDesc = document.createElement('div');
+        tempDesc.className = 'checkbox-description';
+        tempDesc.textContent = 'Controls response variability: 0 is completely deterministic and focused, while 1 introduces maximum randomness and creativity.';
+
+        const tempInput = document.createElement('input');
+        tempInput.type = 'number';
+        tempInput.setAttribute('data-field', 'temperature');
+        tempInput.id = `temperature-${tab.id}`;
+        tempInput.className = 'temperature-input';
+        tempInput.min = '0';
+        tempInput.max = '1';
+        tempInput.step = '0.05';
+        tempInput.value = tab.temperature !== undefined && tab.temperature !== null ? tab.temperature : DEFAULT_TEMPERATURE;
+
+        tempGroup.appendChild(tempLabel);
+        tempGroup.appendChild(tempDesc);
+        tempGroup.appendChild(tempInput);
         fieldsWrapper.appendChild(tempGroup);
 
-        const enableCheckbox = section.querySelector('input[type="checkbox"][data-field="enabled"]');
-        const applyState = (isEnabled) => {
+        const applyEnabledState = (isEnabled) => {
             fieldsWrapper.style.opacity = isEnabled ? '1' : '0.5';
             fieldsWrapper.style.pointerEvents = isEnabled ? 'auto' : 'none';
+
+            const sideBtn = this._sidebar.querySelector(`.tab-btn[data-target="${tab.id}"]`);
+            if (sideBtn) sideBtn.classList.toggle('inactive', !isEnabled);
         };
-        applyState(tabState.enabled);
-        enableCheckbox.addEventListener('change', () => {
-            applyState(enableCheckbox.checked);
+        applyEnabledState(!!tab.enabled);
+        enabledCheckbox.addEventListener('change', () => {
+            applyEnabledState(enabledCheckbox.checked);
         }, { signal: this._abortController?.signal });
 
-        container.appendChild(section);
+        body.appendChild(section);
     }
 
-    _saveTabState(tabId, container) {
-        const state = {};
-
-        const enabledCheckbox = container.querySelector('input[type="checkbox"][data-field="enabled"]');
-        const promptTextarea = container.querySelector('textarea[data-field="prompt"]');
-        const temperatureInput = container.querySelector('input[data-field="temperature"]');
-
-        state.enabled = enabledCheckbox ? enabledCheckbox.checked : true;
-        state.prompt = promptTextarea ? promptTextarea.value : '';
-        state.temperature = temperatureInput ? (parseFloat(temperatureInput.value) ?? 0.5) : 0.5;
-
-        this.dataManager.setTabState(tabId, state);
+    _selectTab(tabId) {
+        if (tabId === this._activeId) return;
+        this._captureActiveFields();
+        this._activeId = tabId;
+        this._render();
     }
-}
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    _addTab() {
+        this._captureActiveFields();
+
+        const userTabCount = this._tabs.filter(t => !this._defaultIds.has(t.id)).length;
+        if (userTabCount >= MAX_USER_TABS) return;
+
+        const maxId = this._tabs.reduce((acc, t) => {
+            const n = Number(t.id);
+            return Number.isNaN(n) ? acc : Math.max(acc, n);
+        }, 0);
+
+        const tab = {
+            id: String(Math.max(USER_TAB_ID_START, maxId + 1)),
+            displayName: NEW_TAB_NAME,
+            enabled: true,
+            temperature: DEFAULT_TEMPERATURE,
+            prompt: ''
+        };
+
+        this._tabs.push(tab);
+        this._activeId = tab.id;
+        this._render();
+    }
+
+    _deleteTab(tabId) {
+        if (this._defaultIds.has(tabId)) return;
+        const index = this._tabs.findIndex(t => t.id === tabId);
+        if (index === -1) return;
+
+        this._captureActiveFields();
+        this._tabs = this._tabs.filter(t => t.id !== tabId);
+
+        if (this._activeId === tabId) {
+            const neighbor = this._tabs[index - 1] || this._tabs[0];
+            this._activeId = neighbor ? neighbor.id : null;
+        }
+
+        this._render();
+    }
+
+    _captureActiveFields() {
+        const tab = this._tabs.find(t => t.id === this._activeId);
+        if (!tab) return;
+
+        const body = this._body;
+        const enabledCheckbox = body.querySelector('input[type="checkbox"][data-field="enabled"]');
+        const promptTextarea = body.querySelector('textarea[data-field="prompt"]');
+        const tempInput = body.querySelector('input[data-field="temperature"]');
+        const nameInput = body.querySelector('input[data-field="displayName"]');
+
+        if (enabledCheckbox) tab.enabled = enabledCheckbox.checked;
+        if (promptTextarea) tab.prompt = promptTextarea.value;
+        if (nameInput && nameInput.value.trim()) tab.displayName = nameInput.value.trim();
+
+        if (tempInput) {
+            const value = parseFloat(tempInput.value);
+            if (!Number.isNaN(value)) tab.temperature = value;
+        }
+    }
+
+    _collect() {
+        this._captureActiveFields();
+
+        return {
+            selectedTabId: this._activeId !== null ? Number(this._activeId) : undefined,
+            tabs: this._tabs.map(t => ({
+                id: Number(t.id),
+                displayName: t.displayName,
+                enabled: !!t.enabled,
+                temperature: t.temperature,
+                prompt: t.prompt
+            }))
+        };
+    }
+
+    _ensureErrorElement() {
+        if (this._errorEl && this._dialog.contains(this._errorEl)) return;
+
+        const el = document.createElement('div');
+        el.className = 'instructions-error';
+        el.style.cssText = 'display:none;padding:8px 12px;background:#c0392b;color:#fff;font-size:12px;line-height:1.4;';
+
+        const header = this._dialog.querySelector('.modal-header');
+        if (header && header.parentElement) {
+            header.parentElement.insertBefore(el, header.nextSibling);
+        } else {
+            this._dialog.insertBefore(el, this._dialog.firstChild);
+        }
+
+        this._errorEl = el;
+    }
+
+    _showError(message) {
+        this._ensureErrorElement();
+        this._errorEl.textContent = message;
+        this._errorEl.style.display = 'block';
+    }
+
+    _clearError() {
+        if (this._errorEl) {
+            this._errorEl.textContent = '';
+            this._errorEl.style.display = 'none';
+        }
+    }
 }

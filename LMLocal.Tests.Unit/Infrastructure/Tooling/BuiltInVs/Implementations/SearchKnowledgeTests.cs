@@ -93,7 +93,7 @@ namespace LMLocal.Tests.Unit.Infrastructure.Tooling.BuiltInVs.Implementations
         }
 
         [Test]
-        public async Task GetToolInfo_ReturnsCorrectMetadata()
+        public void GetToolInfo_ReturnsCorrectMetadata()
         {
             var info = _tool.GetToolInfo();
             Assert.That(info.Name, Is.EqualTo("search_solution_knowledge"));

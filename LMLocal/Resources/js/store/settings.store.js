@@ -10,7 +10,7 @@ class SettingsStoreClass extends BaseStoreClass {
             KnowledgeBasePaths: "./; ./docs",
             ApiKey: "",
             AutoLoadOnStartup: true,
-            EnableHistoryCompression: true,
+            EnableHistoryCompression: false,
             EnableHistoryCompaction: true,
             Theme: 0,
             StreamInactivityTimeoutSeconds: 20,

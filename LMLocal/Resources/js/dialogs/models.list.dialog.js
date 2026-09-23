@@ -1,3 +1,4 @@
+import { UIText } from '@app/constants/app.globals.js';
 import { createCallback } from '@app/lib/callback.js';
 import { populateProviderSelect } from '@app/lib/populate-provider.select.js';
 import { AsyncGuard } from '@app/lib/async.guard.js';
@@ -131,8 +132,8 @@ export class ModelSelectorDialog {
                 </svg>
                 <span>
                     ${isFiltering
-                ? `No models match "<strong>${escapeHtml(this.filterText)}</strong>"`
-                : 'No models available at the moment.'}
+                ? `${UIText.MODELS_MATCH_NONE} "<strong>${escapeHtml(this.filterText)}</strong>"`
+                : UIText.MODELS_NONE_AT_MOMENT}
                 </span>
             </div>
         `;

@@ -21,6 +21,12 @@ namespace LMLocal.Infrastructure.WebView.Models
 
         [JsonProperty("error")]
         public ErrorInfo Error { get; set; }
+
+        /// <summary>
+        /// The base URL that was actually probed.
+        /// </summary>
+        [JsonProperty("url")]
+        public string Url { get; set; }
     }
 
     /// <summary>

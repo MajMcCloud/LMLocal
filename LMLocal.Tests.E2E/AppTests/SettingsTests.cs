@@ -215,4 +215,53 @@ public class SettingsTests : AppTestBase
         await Expect(toast).ToContainTextAsync("Connection refused by remote host");
     }
 
+    [Test]
+    [Category("Settings")]
+    public async Task TestConnection_Error_WithV1Url_ShowsUrlAndTip()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        // Provider + URL are configured, and TestConnection fails echoing the probed URL.
+        await Page.EvaluateAsync(@"() => {
+            window.__settingsOverride.GetSettingsAsync = async () => JSON.stringify({
+                AutoLoadOnStartup: true,
+                Provider: 'openai',
+                ProviderId: 0,
+                LmStudioBaseUrl: 'https://api.x.ai/v1'
+            });
+            window.__settingsOverride.TestConnectionAsync = async (json) => JSON.stringify({
+                success: false,
+                error: { message: '404 Not Found' },
+                url: 'https://api.x.ai/v1'
+            });
+            window.__providersOverride.GetProvidersAsync = async () => JSON.stringify({
+                defaultProviders: [
+                    { id: 0, providerType: 'openai', name: 'OpenAI', customBaseUrl: 'https://api.x.ai/v1', customApiKey: 'key' }
+                ],
+                providers: [],
+                providerTypes: [
+                    { key: 'openai', displayName: 'OpenAI' }
+                ]
+            });
+        }");
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-settings']").ClickAsync();
+
+        var dialog = Page.Locator("#settings-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#settings-dialog form')?.children.length > 0");
+        await Expect(dialog.Locator("[data-setting='Provider'] option")).ToHaveCountAsync(1);
+
+        await dialog.Locator(".test-connection-btn").ClickAsync();
+
+        var toast = Page.Locator("#app-toast.show");
+        await Expect(toast).ToBeVisibleAsync();
+        await Expect(toast).ToContainTextAsync("404 Not Found");
+        await Expect(toast).ToContainTextAsync("https://api.x.ai/v1");
+        await Expect(toast).ToContainTextAsync("added automatically");
+    }
+
 }

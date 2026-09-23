@@ -69,6 +69,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Application\Abstractions\Ports\IInstructionDefaultsProvider.cs" />
+    <Compile Include="Application\Abstractions\Ports\IInstructionsManager.cs" />
     <Compile Include="Application\Abstractions\Ports\IToolRouter.cs" />
     <Compile Include="Application\Autocompletions\AutocompletionsService.cs" />
     <Compile Include="Application\Autocompletions\CompletionContext.cs" />
@@ -97,6 +99,7 @@
     <Compile Include="Commands\SendToLMFromEditorCommand.cs" />
     <Compile Include="Commands\SendToLMFromSolutionExplorerCommand.cs" />
     <Compile Include="Core\Common\ChatHistoryNormalizer.cs" />
+    <Compile Include="Core\Common\ExceptionFormatter.cs" />
     <Compile Include="Core\Common\MarkdownCodeBlockFormatter.cs" />
     <Compile Include="Core\Common\MarkdownLanguageHelper.cs" />
     <Compile Include="Core\Common\Pluralizer.cs" />
@@ -108,6 +111,8 @@
     <Compile Include="Core\Models\AutocompletionsConfig.cs" />
     <Compile Include="Core\Models\CompletionParameters.cs" />
     <Compile Include="Core\Models\GetProvidersResponse.cs" />
+    <Compile Include="Core\Models\Instructions\InstructionDefaultTab.cs" />
+    <Compile Include="Core\Models\Instructions\InstructionUpdateResult.cs" />
     <Compile Include="Core\Models\KnownModelContexts.cs" />
     <Compile Include="Core\Models\ListModelsParameters.cs" />
     <Compile Include="Core\Models\McpConfig.cs" />
@@ -129,6 +134,7 @@
     <Compile Include="Infrastructure\Autocompletions\InlineCompletion\TabCommandHandler.cs" />
     <Compile Include="Infrastructure\HttpWrapper\HttpClientHandlerFactory.cs" />
     <Compile Include="Infrastructure\HttpWrapper\TemporaryHttpClientFactory.cs" />
+    <Compile Include="Infrastructure\Instructions\FileInstructionDefaultsProvider.cs" />
     <Compile Include="Infrastructure\LlmApi\ApiErrorParser.cs" />
     <Compile Include="Infrastructure\LlmApi\ApiRequestBuilder.cs" />
     <Compile Include="Infrastructure\LlmApi\ProviderContext.cs" />
@@ -353,6 +359,10 @@
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <Content Include="Resources\js\lib\toast.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="Resources\js\lib\test-connection.message.js">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>

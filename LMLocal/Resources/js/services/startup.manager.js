@@ -1,3 +1,4 @@
+import { UIText } from '@app/constants/app.globals.js';
 import { AppStatus } from '@app/store/app.status.js';
 import appStore from '@app/store/app.store.js';
 import modelStore from '@app/store/model.store.js';
@@ -24,7 +25,7 @@ class StartupManager {
             if (response.error || !response.models || response.models.length === 0) {
                 appStore.setState({
                     status: AppStatus.OFFLINE,
-                    error: response.error || "No models available",
+                    error: response.error || UIText.MODELS_UNAVAILABLE,
                     tokenSpeed: 0
                 });
                 return;

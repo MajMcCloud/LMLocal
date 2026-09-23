@@ -2,9 +2,9 @@ using System;
 using System.ComponentModel.Design;
 using System.Reflection;
 using EnvDTE;
+using LMLocal.Application.Abstractions.Ports;
 using LMLocal.Application.ChatSession;
 using LMLocal.Infrastructure.DependencyInjection;
-using LMLocal.Infrastructure.Instructions;
 using Microsoft.VisualStudio.Shell;
 using Task = System.Threading.Tasks.Task;
 

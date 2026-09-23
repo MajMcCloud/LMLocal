@@ -275,6 +275,41 @@ public class AutocompletionsTests : AppTestBase
 
     [Test]
     [Category("Autocompletions")]
+    public async Task TestButton_Error_WithV1Url_ShowsUrlAndTip()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await SetupAutocompletionsMockAsync();
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        // TestCompletion fails and echoes a probed URL that contains "/v1".
+        await Page.EvaluateAsync(@"() => {
+            window.__autocompletionsOverride.TestCompletionAsync = async (json) => JSON.stringify({
+                success: false,
+                error: { message: '404 Not Found' },
+                url: 'https://api.x.ai/v1'
+            });
+        }");
+
+        await OpenDialogViaMenuAsync();
+
+        var dialog = Page.Locator(DialogId);
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Expect(dialog.Locator(InfoViewId)).ToBeVisibleAsync();
+
+        await dialog.Locator(TestBtnId).ClickAsync();
+
+        await WaitForTestButtonClassAsync("error");
+
+        var toast = Page.Locator("#app-toast.show");
+        await Expect(toast).ToBeVisibleAsync();
+        await Expect(toast).ToContainTextAsync("404 Not Found");
+        await Expect(toast).ToContainTextAsync("https://api.x.ai/v1");
+        await Expect(toast).ToContainTextAsync("added automatically");
+    }
+
+    [Test]
+    [Category("Autocompletions")]
     public async Task ChangeButton_ShowsSelectionView()
     {
         await GotoWithMockAsync("webview-mock.js");

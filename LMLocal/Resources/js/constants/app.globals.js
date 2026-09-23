@@ -44,6 +44,26 @@ export const UIText = Object.freeze({
     FILES_PROCESSING: 'Files are still loading — please wait',
     FILES_TOO_LARGE: 'File exceeds size limit',
     FILES_UNSUPPORTED: 'Unsupported file type',
+
+    // Providers dialog
+    PROVIDERS_EMPTY_FILTERED: 'No providers match the current filter.',
+    PROVIDERS_EMPTY: 'No custom providers added yet. Click " + Add Profile" to create one.',
+    PROVIDERS_SAVE_FAILED: 'Failed to save providers',
+
+    // Models dialog
+    MODELS_NONE: 'No models available.',
+    MODELS_NONE_AT_MOMENT: 'No models available at the moment.',
+    MODELS_MATCH_NONE: 'No models match',
+    MODELS_EMPTY_FILTERED: 'No models match the current filter.',
+    MODELS_EMPTY: 'No models added yet. Click "+ Add Model" to create one.',
+
+    // Startup
+    MODELS_UNAVAILABLE: 'No models available',
+
+    // Connection / certificate test toasts
+    CONNECTION_TEST_FAILED: 'Connection test failed',
+    CERTIFICATE_VALID: 'Certificate valid',
+    CERTIFICATE_TEST_FAILED: 'Certificate test failed',
 });
 
 export const Config = {
@@ -75,6 +95,12 @@ export const Config = {
 };
 
 /**
+ * Shown when a base URL appears to include the "/v1" version segment.
+ */
+export const V1_TIP =
+    '💡 Tip: the URL appears to contain /v1 — remove the /v1 suffix, it is added automatically.';
+
+/**
  * Shared inline SVG icons for UI buttons.
  * Use these instead of inlining SVG markup in dialogs/components.
  */
@@ -85,5 +111,5 @@ export const Icons = Object.freeze({
     </svg>`,
     SUCCESS: `<svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>`,
     ERROR: `<svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>`,
+    REMOVE: `<svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
 });
-

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using LMLocal.Core.Common;
@@ -149,12 +150,12 @@ namespace LMLocal.Tests.Unit.Infrastructure
         // ── new tests for BuildDefaultProviders ─────────────────────
 
         [Test]
-        public void BuildDefaultProviders_ReturnsFiveProviders()
+        public void BuildDefaultProviders_ReturnsSixProviders()
         {
             var result = ProvidersConfigManager.BuildDefaultProviders();
 
             Assert.That(result, Is.Not.Null);
-            Assert.That(result.Count, Is.EqualTo(5));
+            Assert.That(result.Count, Is.EqualTo(6));
         }
 
         [Test]
@@ -162,11 +163,12 @@ namespace LMLocal.Tests.Unit.Infrastructure
         {
             var result = ProvidersConfigManager.BuildDefaultProviders();
 
-            Assert.That(result[0].Id, Is.EqualTo(0));
-            Assert.That(result[1].Id, Is.EqualTo(1));
-            Assert.That(result[2].Id, Is.EqualTo(2));
-            Assert.That(result[3].Id, Is.EqualTo(4));
-            Assert.That(result[4].Id, Is.EqualTo(3));
+            Assert.That(result[0].Id, Is.EqualTo(0)); // LmStudio
+            Assert.That(result[1].Id, Is.EqualTo(1)); // Ollama
+            Assert.That(result[2].Id, Is.EqualTo(2)); // Jan
+            Assert.That(result[3].Id, Is.EqualTo(4)); // LlamaCpp
+            Assert.That(result[4].Id, Is.EqualTo(5)); // Unsloth
+            Assert.That(result[5].Id, Is.EqualTo(3)); // OpenAi (custom / cloud)
         }
 
         [Test]
@@ -175,8 +177,8 @@ namespace LMLocal.Tests.Unit.Infrastructure
             var result = ProvidersConfigManager.BuildDefaultProviders();
             var ids = new List<int>();
             foreach (var p in result) ids.Add(p.Id);
-            Assert.That(ids.Count, Is.EqualTo(5));
-            Assert.That(new HashSet<int>(ids).Count, Is.EqualTo(5));
+            Assert.That(ids.Count, Is.EqualTo(6));
+            Assert.That(new HashSet<int>(ids).Count, Is.EqualTo(ids.Count));
         }
 
         [Test]
@@ -188,7 +190,8 @@ namespace LMLocal.Tests.Unit.Infrastructure
             Assert.That(result[1].ProviderName, Is.EqualTo("Ollama (local)"));
             Assert.That(result[2].ProviderName, Is.EqualTo("Jan (local)"));
             Assert.That(result[3].ProviderName, Is.EqualTo("Llama.cpp (local)"));
-            Assert.That(result[4].ProviderName, Is.EqualTo("OpenAI compatible"));
+            Assert.That(result[4].ProviderName, Is.EqualTo("Unsloth (local)"));
+            Assert.That(result[5].ProviderName, Is.EqualTo("OpenAI compatible"));
         }
 
         [Test]
@@ -200,7 +203,8 @@ namespace LMLocal.Tests.Unit.Infrastructure
             Assert.That(result[1].ProviderType, Is.EqualTo("ollama"));
             Assert.That(result[2].ProviderType, Is.EqualTo("jan"));
             Assert.That(result[3].ProviderType, Is.EqualTo("llamacpp"));
-            Assert.That(result[4].ProviderType, Is.EqualTo("openai"));
+            Assert.That(result[4].ProviderType, Is.EqualTo("unsloth"));
+            Assert.That(result[5].ProviderType, Is.EqualTo("openai"));
         }
 
         [Test]
@@ -212,7 +216,22 @@ namespace LMLocal.Tests.Unit.Infrastructure
             Assert.That(result[1].CustomBaseUrl, Is.EqualTo("http://localhost:11434"));
             Assert.That(result[2].CustomBaseUrl, Is.EqualTo("http://localhost:1337"));
             Assert.That(result[3].CustomBaseUrl, Is.EqualTo("http://localhost:8080"));
-            Assert.That(result[4].CustomBaseUrl, Is.EqualTo(string.Empty));
+            Assert.That(result[4].CustomBaseUrl, Is.EqualTo("http://localhost:8888/"));
+            Assert.That(result[5].CustomBaseUrl, Is.EqualTo(string.Empty));
+        }
+
+        [Test]
+        public void BuildDefaultProviders_ContainsUnsloth_AtExpectedPosition()
+        {
+            var result = ProvidersConfigManager.BuildDefaultProviders();
+
+            var unsloth = result.Single(p => p.ProviderType == "unsloth");
+
+            Assert.That(unsloth.Id, Is.EqualTo(5));
+            Assert.That(unsloth.ProviderName, Is.EqualTo("Unsloth (local)"));
+            Assert.That(unsloth.CustomBaseUrl, Is.EqualTo("http://localhost:8888/"));
+            // Unsloth sits between Llama.cpp and OpenAI compatible.
+            Assert.That(result.IndexOf(unsloth), Is.EqualTo(4));
         }
 
         [Test]

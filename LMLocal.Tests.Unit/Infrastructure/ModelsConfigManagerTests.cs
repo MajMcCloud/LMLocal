@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
@@ -232,6 +232,50 @@ namespace LMLocal.Tests.Unit.Infrastructure
             var result = await manager.GetAsync();
 
             Assert.That(result.Models[0], Is.EqualTo(config.Models[0]));
+        }
+
+        [Test]
+        public async Task RoundTrip_PreservesInstructionTabId()
+        {
+            var fs = new InMemoryFileSystem();
+            var settings = new TestSettingsManager { LocalAppDataFolder = "LMLocalChat" };
+
+            var manager = new ModelsConfigManager(fs, settings);
+            var config = new ModelsConfigFile
+            {
+                Models = new List<ModelDefinition>
+                {
+                    new ModelDefinition { Id = 1, ModelId = "model-a", ProviderType = "ollama", InstructionTabId = 4 }
+                }
+            };
+
+            await manager.UpdateAsync(config);
+            var result = await manager.GetAsync();
+
+            Assert.That(result.Models[0].InstructionTabId, Is.EqualTo(4));
+            Assert.That(result.Models[0], Is.EqualTo(config.Models[0]));
+        }
+
+        [Test]
+        public async Task UpdateAsync_OmitsInstructionTabId_WhenUnset()
+        {
+            var fs = new InMemoryFileSystem();
+            var settings = new TestSettingsManager { LocalAppDataFolder = "LMLocalChat" };
+            var path = ExpectedPath(settings.LocalAppDataFolder);
+
+            var manager = new ModelsConfigManager(fs, settings);
+            var config = new ModelsConfigFile
+            {
+                Models = new List<ModelDefinition>
+                {
+                    new ModelDefinition { Id = 1, ModelId = "model-a", ProviderType = "ollama" }
+                }
+            };
+
+            await manager.UpdateAsync(config);
+
+            var storedJson = fs.ReadAllText(path);
+            Assert.That(storedJson, Does.Not.Contain("instructionTabId"));
         }
 
         // ── helper ──────────────────────────────────────────────────

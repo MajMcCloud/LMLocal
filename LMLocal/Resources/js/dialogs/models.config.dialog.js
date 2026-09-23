@@ -1,9 +1,11 @@
-﻿import { createCallback } from '@app/lib/callback.js';
+﻿import { UIText } from '@app/constants/app.globals.js';
+import { createCallback } from '@app/lib/callback.js';
 import { populateProviderSelect } from '@app/lib/populate-provider.select.js';
 import { formatTokens } from '@app/lib/formatting.js';
 import toast from '@app/lib/toast.js';
 import modelStore from '@app/store/model.store.js';
 import settingsStore from '@app/store/settings.store.js';
+import instructionsStore from '@app/store/instructions.store.js';
 
 const REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'max'];
 
@@ -56,6 +58,7 @@ export class ModelsConfigDialog {
             contextLengthInput: dialog.querySelector('[data-setting="contextLength"]'),
             maxTokensInput: dialog.querySelector('[data-setting="maxTokens"]'),
             reasoningSelect: dialog.querySelector('[data-setting="reasoningEffort"]'),
+            instructionSelect: dialog.querySelector('[data-setting="instructionTabId"]'),
             isCustomCheckbox: dialog.querySelector('[data-setting="isCustom"]'),
             enabledCheckbox: dialog.querySelector('[data-setting="enabled"]'),
             formCancelBtn: dialog.querySelector('#model-form-cancel'),
@@ -161,6 +164,7 @@ export class ModelsConfigDialog {
         const name = (model.displayName || '').toLowerCase();
         const type = (model.providerType || '').toLowerCase();
         const provider = this._getProviderLabel(model).toLowerCase();
+
         return modelId.includes(search) || name.includes(search)
             || type.includes(search) || provider.includes(search);
     }
@@ -185,8 +189,22 @@ export class ModelsConfigDialog {
         return byType?.name || type;
     }
 
+    /**
+     * Resolves the display name of the instruction bound to a model entry, if any.
+     */
+    _getInstructionLabel(model) {
+        const boundId = model?.instructionTabId;
+        if (boundId === undefined || boundId === null) return null;
+
+        const tabs = instructionsStore.getState().instructions || [];
+        const tab = tabs.find(t => t && Number(t.id) === Number(boundId));
+        return tab ? tab.displayName : `Instruction #${boundId}`;
+    }
+
     _buildMeta(model) {
         const parts = [this._getProviderLabel(model)];
+        const instructionLabel = this._getInstructionLabel(model);
+        if (instructionLabel) parts.push(`Instruction: ${instructionLabel}`);
         if (model.contextLength) parts.push(`${formatTokens(model.contextLength)} context`);
         if (model.maxTokens) parts.push(`Max ${formatTokens(model.maxTokens)}`);
         if (model.reasoningEffort) parts.push(`Reasoning: ${model.reasoningEffort}`);
@@ -221,8 +239,8 @@ export class ModelsConfigDialog {
             emptyMsg.id = 'models-config-empty-state';
             const filterActive = this._filterText.trim() !== '';
             emptyMsg.innerHTML = filterActive
-                ? '<span>No models match the current filter.</span>'
-                : '<span>No models added yet. Click "+ Add Model" to create one.</span>';
+                ? `<span>${UIText.MODELS_EMPTY_FILTERED}</span>`
+                : `<span>${UIText.MODELS_EMPTY}</span>`;
             listContainer.appendChild(emptyMsg);
             return;
         }
@@ -292,6 +310,49 @@ export class ModelsConfigDialog {
         });
     }
 
+    /**
+     * Fills the instruction dropdown: "Not set" plus every enabled tab.
+     */
+    _populateInstructions() {
+        const { instructionSelect } = this.el || this._getElements();
+        if (!instructionSelect) return;
+
+        instructionSelect.innerHTML = '';
+
+        const notSet = document.createElement('option');
+        notSet.value = '';
+        notSet.textContent = 'Not set';
+        instructionSelect.appendChild(notSet);
+
+        const tabs = instructionsStore.getState().instructions || [];
+        const boundId = this._editingModel?.instructionTabId;
+        const boundNum = (boundId === undefined || boundId === null) ? null : Number(boundId);
+        let boundIsEnabledOption = false;
+
+        for (const tab of tabs) {
+            if (!tab || !tab.enabled) continue;
+
+            const option = document.createElement('option');
+            option.value = tab.id;
+            option.textContent = tab.displayName;
+            instructionSelect.appendChild(option);
+
+            if (boundNum !== null && Number(tab.id) === boundNum) {
+                boundIsEnabledOption = true;
+            }
+        }
+
+        if (boundNum !== null && !boundIsEnabledOption) {
+            const known = tabs.find(t => t && Number(t.id) === boundNum);
+            const extra = document.createElement('option');
+            extra.value = boundId;
+            extra.textContent = known
+                ? `${known.displayName} (disabled)`
+                : `Instruction #${boundId} (missing)`;
+            instructionSelect.appendChild(extra);
+        }
+    }
+
     _populateProvider() {
         const { providerSelect } = this.el;
         if (!providerSelect) return;
@@ -347,6 +408,7 @@ export class ModelsConfigDialog {
 
         this._fillReasoningSelect();
         this._populateProvider();
+        this._populateInstructions();
 
         if (model) {
             idInput.value = model.id || '';
@@ -355,6 +417,9 @@ export class ModelsConfigDialog {
             contextLengthInput.value = model.contextLength ?? '';
             maxTokensInput.value = model.maxTokens ?? '';
             this.el.reasoningSelect.value = model.reasoningEffort || '';
+            this.el.instructionSelect.value = (model.instructionTabId !== undefined && model.instructionTabId !== null)
+                ? String(model.instructionTabId)
+                : '';
             isCustomCheckbox.checked = !!model.isCustom;
             enabledCheckbox.checked = model.enabled !== false;
         } else {
@@ -364,6 +429,7 @@ export class ModelsConfigDialog {
             contextLengthInput.value = '';
             maxTokensInput.value = '';
             this.el.reasoningSelect.value = '';
+            this.el.instructionSelect.value = '';
             isCustomCheckbox.checked = true;
             enabledCheckbox.checked = true;
         }
@@ -396,6 +462,7 @@ export class ModelsConfigDialog {
     _handleDeleteModel(model) {
         if (!model) return;
         this._models = this._models.filter(m => (m.id || m.Id) !== (model.id || model.Id));
+
         this._renderList();
     }
 
@@ -442,6 +509,9 @@ export class ModelsConfigDialog {
         if (maxTokens !== undefined) payload.maxTokens = maxTokens;
 
         if (reasoningSelect.value) payload.reasoningEffort = reasoningSelect.value;
+
+        const instructionTabId = this._parseOptionalInt(this.el.instructionSelect?.value);
+        if (instructionTabId !== undefined) payload.instructionTabId = instructionTabId;
 
         return payload;
     }
@@ -541,6 +611,7 @@ export class ModelsConfigDialog {
             this._confirmHandler = async () => {
                 try {
                     const config = { models: this._models };
+
                     const result = await this.onSave.emitResult(config);
                     if (!this.el) return;
                     if (!(result && result.success)) {

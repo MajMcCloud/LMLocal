@@ -46,6 +46,7 @@ class AppManager {
             console.error("onAppInit load failed:", e);
         } finally {
             await appDataService.getInstructionsAsync();
+            await appDataService.applyActiveModelInstruction();
             await appDataService.getSnapshotAsync();
         }
     }
@@ -61,6 +62,7 @@ class AppManager {
     async reloadActiveModel() {
         appStore.setState({ status: AppStatus.CONNECTING, accumulatedText: "", accumulatedThoughtText: "", error: null });
         await startupManager.initialize();
+        await appDataService.applyActiveModelInstruction();
     }
 
     async performSendMessage(text, hasContent, images = []) {

@@ -574,6 +574,7 @@
         padding: 8px 0;
         flex-shrink: 0;
         height: 100%;
+        overflow-y: auto;
     }
 
     #instructions-dialog .tab-btn {
@@ -586,7 +587,7 @@
         cursor: pointer;
         border-left: 2px solid transparent;
         outline: none;
-        transition: background 0.1s, color 0.1s;
+        transition: background 0.1s, color 0.1s, opacity 0.1s;
     }
 
         #instructions-dialog .tab-btn:hover {
@@ -599,6 +600,10 @@
             color: var(--text-color);
             border-left: 2px solid var(--accent-color);
         }
+
+    #instructions-dialog .tab-btn.inactive {
+        opacity: 0.5;
+    }
 
     #instructions-dialog .modal-body {
         flex: 1;
@@ -767,6 +772,40 @@
         margin-bottom: 0;
         pointer-events: none;
     }
+
+    #instructions-dialog .group-header-row .header-title {
+        flex: 1;
+    }
+
+    #instructions-dialog .group-header-row .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    #instructions-dialog .tab-delete-btn {
+        background: none;
+        border: none;
+        padding: 2px 4px;
+        border-radius: 3px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted-color);
+        transition: background-color 0.1s ease, color 0.1s ease;
+    }
+
+        #instructions-dialog .tab-delete-btn:hover {
+            background-color: var(--stop-bg, rgba(199, 80, 80, 0.08));
+            color: var(--stop-text, #e07a7a);
+        }
+
+        #instructions-dialog .tab-delete-btn svg {
+            display: block;
+            width: 14px;
+            height: 14px;
+        }
 
     #instructions-dialog .group-header-row input[type="checkbox"] {
         appearance: none !important;

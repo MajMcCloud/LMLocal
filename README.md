@@ -40,7 +40,6 @@
 - [Smart Workflows & Best Practices](#content--smart-workflows--best-practices)
 - [Auto-Completions](#content--auto-completions)
 - [Context Menu Commands](#content--context-menu-commands)
-- [History Optimization: Clean Whitespace](#content--history-optimization-clean-whitespace)
 - [Model Context Protocol (MCP) Support](#content--model-context-protocol-mcp-support)
 - [How to Configure MCP Servers](#content--how-to-configure-mcp-servers)
 - [Troubleshooting](#content--troubleshooting)
@@ -55,7 +54,7 @@
 - **🌐 Local & Cloud LLMs** – Works with Ollama, LM Studio, Jan, Llama.cpp, and any OpenAI‑compatible API.
 - **🔌 MCP Extensibility** – Add external tools via Model Context Protocol (stdio/http).
 - **📂 Flexible Workspace Context** – Quickly pass code to the AI: use the **`+`** button to attach the active file in the background, or right-click to send specific text selections.
-- **🧩 Reasoning, Roles & Efficiency** – Expandable thoughts, collapsible tool calls, custom system presets, token optimization (summarization, whitespace cleaning, live stats).
+- **🧩 Reasoning, Roles & Efficiency** – Expandable thoughts, collapsible tool calls, custom system presets, token optimization (summarization, live stats).
 - **⚙️ Built-in Provider Integrations** – Pre-configured internal handlers for specific AI platforms (including Ollama, Groq, OpenRouter, Google AI Studio and DeepSeek). The extension natively manages each provider's protocol variations and stream parsing — enter your target API Base URL and personal API Key to connect.
 - **💾 Persistent & Reliable** – Auto‑connects on startup, restores your last session from local logs, provides a chat history dialog to browse and restore previous sessions, centralized settings.
 - **🔄 Hot-Swappable LLMs** – Switch between local models or cloud providers on the fly without clearing the chat. The new model seamlessly continues the conversation using the existing history and context.
@@ -186,7 +185,6 @@ To use LM Local, you need:
 
 ### Efficiency & Token Management
 - 📉 **Conversation Summarization** – Condenses older messages into a concise overview when the conversation grows long.
-- 🧹 **History Optimization** – Optionally compresses redundant whitespace and trims extra lines from background history entries to save tokens.
 - 📊 **Live Stats** – Status bar metrics: real-time speed (tokens/sec) and total token count.
 - 🏷️ **Token Stats Badge** – After each response, a compact summary shows total tokens, cached tokens (when available), and the average generation speed (tokens/sec).
 
@@ -289,6 +287,7 @@ The **Models** dialog (menu `… → Models…`) manages model settings in the `
 
 The **Adjust Current** button automatically finds or prepares a record for the currently active model.
 
+Additionally, you can configure the optional **Instructions** (`instructions`) parameter for any model. If set, switching to this model will automatically select its assigned instruction preset (system prompt) in the chat.
 
 <a id="content--builtin-ai-tools"></a>
 ## Built‑in AI Tools
@@ -323,7 +322,7 @@ Open this from the extension's main menu. You’ll see all built‑in tools (for
 | `set_file_project_status` | Includes a file in a project, or removes it from the project and deletes it from disk. | C#, VB.NET, F#, C++ (.vcxproj) | – |
 | `read_file_lines` | Reads a specific range of lines. | All | – |
 | `search_file_content` | Searches for a text string (case‑insensitive) inside solution files. | All | – |
-| `search_solution_knowledge` | Searches Markdown files in predefined folders of the solution. | Markdown | Folders are configured in Settings → `Knowledge base paths`. |
+| `search_solution_knowledge` | Searches Markdown files in predefined folders of the solution. | Markdown (.md) | Folders are configured in Settings → `Knowledge base paths`. |
 | `get_active_document` | Returns the path and full text of the currently open document. | All | – |
 | `replace_file_content` | Replaces the entire content of a file with the provided text. | All | Automatic syntax check applies * |
 | `replace_file_lines` | Replaces a range of lines (by numbers) with new content. | All | Automatic syntax check applies * |
@@ -379,7 +378,6 @@ To quickly test subagents without manually editing JSON:
 2. **Sync Settings:** In LMLocal, switch your active chat model to that local model, open **Sub Agents** from the main menu, and click **Use Active Model**. This sets up the root provider defaults and creates the predefined subagent configs automatically.
 3. **Switch Back & Run:** Switch your main chat back to your primary model (e.g., Claude, GPT-5, or a large local LLM), ensure subagents are enabled via the **'s'** toolbar icon, and send a task (e.g., *"Find my class in the solution"*).
 
-
 ### Predefined Subagents
 
 Out of the box, LMLocal includes **4 predefined subagents** optimized for different code-exploration and testing tasks:
@@ -388,6 +386,9 @@ Out of the box, LMLocal includes **4 predefined subagents** optimized for differ
 2. **Code reader** (`code_reader_subagent`) — Deterministic read-only code reader designed to find and read specific files or code ranges verbatim.
 3. **Symbol Analyzer** (`symbol_analyzer_subagent`) — Read-only symbol analyzer for C# and JavaScript symbols, declarations, references, and type metadata.
 4. **Build & Test** (`build_subagent`) — Agent used to build the open solution and run unit tests in Visual Studio, returning compiler errors and test failures.
+
+> **Troubleshooting & Updates:**
+> * **Schema Changes:** `subagents.json` is preserved across app updates and will not be overwritten automatically. If a new release introduces breaking schema changes, delete `subagents.json` from your config directory to let LMLocal recreate it with up-to-date defaults.
 
 
 ### Configuration
@@ -448,8 +449,10 @@ Enable subagent mode in the chat via the **'s'** toolbar icon or the **"Enable S
 **Models under 8B parameters** are often unreliable for complex multi-step tasks and tend to get stuck in loops or hallucinate tool arguments. If you want to configure and tune subagents yourself using a small model (<8B), keep these key points in mind:
 
 1. **Defensive Prompting is Mandatory:** You **must** use a strict system prompt with explicit planning steps and verification loops, or be prepared to switch to a larger model.
-2. **Testing via Benchmark:** You can clone the repository and run **`Run_Full_Benchmark`** in debug mode. The codebase includes minimal tests for the predefined read agents to check basic functionality.
-> ⏱️ **Important for models <8B:** Because `Run_Full_Benchmark` executes against a live `lmlocal` solution in real time, it runs **relatively slowly**. **Run the benchmark multiple times** rather than just once to account for model variance and verify how reliably your custom prompts handle real workloads across multiple attempts.
+2. **Fine-Tuning Option:** Fine-tuning the model (e.g., via LoRA/QLoRA) on task-specific function-calling datasets builds native adherence to tool schemas.
+3. **Testing via Benchmark:** You can clone the repository and run **`Run_Full_Benchmark`** in debug mode. The codebase includes minimal tests for the predefined read agents to check basic functionality.
+
+> ⏱️ **Important for models <8B:** Because `Run_Full_Benchmark` executes against a live `lmlocal` solution in real time, it runs **relatively slowly**. **Run the benchmark multiple times** rather than just once to account for model variance and verify how reliably your custom prompts or fine-tuned models handle real workloads across multiple attempts.
 
 ---
 
@@ -460,7 +463,7 @@ Enable subagent mode in the chat via the **'s'** toolbar icon or the **"Enable S
 <a id="content--ai-instructions--modes"></a>
 ## 🎭 AI Instructions & Modes
 
-The **"AI Instructions..."** window allows you to define specialized **System Prompts (roles)** and creativity levels (temperature) for different development tasks. The extension comes with pre-configured behavior templates like **Default**, **Improve**, **Review**, **Plan**, **Bugfix**, **Explain**, and **Tests**.
+The **"AI Instructions..."** window allows you to define specialized **System Prompts (roles)** and creativity levels (temperature) for different development tasks. The extension comes with pre-configured behavior templates like **Default**, **Improve**, **Review**, **Plan**, **Bugfix**, **Explain**, **Tests**, , and allows you to create up to **50 custom modes**
 
 > [!TIP]
 > **Prompt Caching Optimization:** Select your desired mode (e.g., Bugfix, Review, Explain) before sending your message. Changing the mode mid-conversation modifies the system prompt, which invalidates the server's prompt cache, increasing token costs and latency.
@@ -472,28 +475,11 @@ Once configured, you can instantly switch between these system roles using the d
 2. Select a target mode/role from the left panel (e.g., `Review` or `Bugfix`).
 3. Configure its behavior in the right panel:
    * **Mode Toggle Checkbox:** Check or uncheck this box to show or hide this specific mode in your main chat bar dropdown.
+   * **Delete Custom Mode (✕):** For custom modes, click the ✕ icon next to the toggle checkbox to remove the mode.
    * **System Prompt:** Enter the base instructions that define the AI's role, processing rules, and operational constraints (e.g., telling the `Tests` mode to act as a QA Engineer and strictly generate xUnit tests in C#).
    * **Temperature:** Set the randomness/creativity threshold. Use values closer to `0` (e.g., `0.1` or `0.2`) for rigid, deterministic tasks like compiling and bug fixing, and closer to `1` for architectural planning or brainstorming.
    > 💡 **Note:** Always check your specific model's official documentation for recommended temperature settings, as some local models require strict defaults or a value of `0` to function properly without breaking formatting or structure.
 4. Click **Save** to apply the changes to your chat environment.
-
-
-
-<a id="content--history-optimization-clean-whitespace"></a>
-## 📉 History Optimization: Clean Whitespace
-
-When the **"Clean whitespace in history"** option is enabled in the extension settings, LM Local automatically runs a cleanup pass on previous conversation turns before forwarding the payload to your AI backend. This reduces token overhead for local models by stripping redundant spaces, tabs, and excess newlines.
-
-> [!NOTE]  
-> **Under the Hood Only:** This optimization is **invisible** in the user interface. Your active chat window will always display responses with full formatting. The cleanup process only alters the raw background history array sent to the model to save context tokens.
-
-### 🧹 What Gets Processed:
-
-* **Collapses Whitespace:** Merges multiple spaces and tabs into a single space.
-* **Compresses Newlines:** Limits consecutive newlines to a maximum of 2 (`\n\n`).
-* **Trims Boundaries:** Removes trailing/leading spaces on every line and trims the overall payload.
-* **Preserves Markdown:** All Markdown tags, headers, and code blocks remain completely intact.
-
 
 
 <a id="content--chat-history-dialog"></a>
@@ -608,7 +594,7 @@ When you just need to generate straightforward boilerplate, repetitive CRUD meth
     * **Evaluation / Physical Batch Size**
     * **Keep Model in Memory**
 * **Drop the Temperature:** Lower your active preset temperature closer to `0.0` or `0.1`. This stops the model from creatively wandering around, forcing it to stream short, direct, and deterministic code structures.
-
+* **Fine-Tune Small Models (<8B) for Structured Tasks:** If small local models struggle with tool calling, looping, or complex JSON schema adherence, fine-tune them (e.g., via LoRA/QLoRA) on task-specific function-calling datasets. Fine-tuning builds native schema adherence into light models, making them faster and more reliable for background tasks and subagents without needing heavy system prompts.
 
 <a id="content--auto-completions"></a>
 ## Auto-Completions

@@ -1,0 +1,106 @@
+﻿namespace LMLocal.Tests.E2E.AppTests;
+
+/// <summary>
+/// Covers binding a model to a single instruction (models.config.json -> instructionTabId):
+/// the auto-apply on model activation and the "Auto-apply instruction" field in the models dialog.
+/// </summary>
+[TestFixture]
+public class ModelInstructionBindingTests : AppTestBase
+{
+    private const string MockFile = "webview-mock-model-instruction.js";
+
+    private async Task GotoAndWaitConnectedAsync()
+    {
+        await GotoWithMockAsync(MockFile);
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+    }
+
+    private async Task OpenModelsDialogAsync()
+    {
+        await GotoAndWaitConnectedAsync();
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-models']").ClickAsync();
+
+        var dialog = Page.Locator("#models-config-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#models-config-list-container')?.children.length > 0");
+    }
+
+    [Test]
+    [Category("ModelInstruction")]
+    public async Task Startup_ModelWithBoundInstruction_AutoSelectsInstructionTab()
+    {
+        await GotoAndWaitConnectedAsync();
+
+        // The active model ("test-model-instance") is bound to instruction tab 4 ("Review"),
+        // so the instruction dropdown must auto-select it instead of the persisted "Default" (id 1).
+        var selected = Page.Locator("#selectedOption");
+        await Expect(selected).ToHaveTextAsync("Review", new() { Timeout = 5000 });
+    }
+
+    [Test]
+    [Category("ModelInstruction")]
+    public async Task ModelsDialog_EditBoundModel_ShowsInstructionInForm()
+    {
+        await OpenModelsDialogAsync();
+
+        var dialog = Page.Locator("#models-config-dialog");
+        var card = dialog.Locator("#models-config-list-container .provider-card")
+            .Filter(new() { HasText = "Test Model" });
+
+        await card.Locator("button:has-text('Edit')").ClickAsync();
+
+        var instructionSelect = dialog.Locator("[data-setting='instructionTabId']");
+        await Expect(instructionSelect).ToHaveValueAsync("4");
+
+        await Expect(dialog.Locator("[data-setting='instructionTabId'] option[value='4']"))
+            .ToHaveTextAsync("Review");
+    }
+
+    [Test]
+    [Category("ModelInstruction")]
+    public async Task ModelsDialog_SaveNewModelWithBinding_PersistsInstructionTabId()
+    {
+        await OpenModelsDialogAsync();
+
+        var dialog = Page.Locator("#models-config-dialog");
+        await dialog.Locator("#model-add-btn").ClickAsync();
+
+        await dialog.Locator("[data-setting='modelId']").FillAsync("manual-with-binding");
+        await dialog.Locator("[data-setting='displayName']").FillAsync("Manual With Binding");
+        await dialog.Locator("[data-setting='instructionTabId']").SelectOptionAsync("4");
+        await dialog.Locator("#model-form-save").ClickAsync();
+
+        await dialog.Locator("#models-config-modal-confirm").ClickAsync();
+        await Expect(dialog).Not.ToBeVisibleAsync();
+
+        var saved = await Page.EvaluateAsync<string>("window.__lastSavedModelsConfig || 'null'");
+        Assert.That(saved, Does.Contain("manual-with-binding"));
+        Assert.That(saved, Does.Contain("\"instructionTabId\":4"));
+    }
+
+    [Test]
+    [Category("ModelInstruction")]
+    public async Task ModelsDialog_ClearBinding_OmitsInstructionTabIdFromPayload()
+    {
+        await OpenModelsDialogAsync();
+
+        var dialog = Page.Locator("#models-config-dialog");
+        var card = dialog.Locator("#models-config-list-container .provider-card")
+            .Filter(new() { HasText = "Test Model" });
+
+        await card.Locator("button:has-text('Edit')").ClickAsync();
+
+        // Clear the binding ("Not set"): the field must not be persisted at all.
+        await dialog.Locator("[data-setting='instructionTabId']").SelectOptionAsync("");
+        await dialog.Locator("#model-form-save").ClickAsync();
+
+        await dialog.Locator("#models-config-modal-confirm").ClickAsync();
+        await Expect(dialog).Not.ToBeVisibleAsync();
+
+        var saved = await Page.EvaluateAsync<string>("window.__lastSavedModelsConfig || 'null'");
+        Assert.That(saved, Does.Not.Contain("instructionTabId"));
+    }
+}

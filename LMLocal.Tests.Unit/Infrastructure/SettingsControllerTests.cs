@@ -390,5 +390,52 @@ namespace LMLocal.Tests.Unit.Infrastructure
                 m => m.TestAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
+
+        // =========================================================================
+        // TestConnectionAsync — URL echo (so the UI can show where the request went)
+        // =========================================================================
+
+        [Test]
+        public async Task TestConnectionAsync_Success_IncludesTestedUrl()
+        {
+            SetupTestConnectionOk();
+
+            var result = await _controller.TestConnectionAsync(
+                "{\"provider\":\"openai\",\"url\":\"https://api.openai.com\",\"apiKey\":\"sk\"}");
+
+            Assert.That(result, Does.Contain("\"success\":true"));
+            Assert.That(result, Does.Contain("\"url\":\"https://api.openai.com\""));
+        }
+
+        [Test]
+        public async Task TestConnectionAsync_Failure_IncludesTestedUrl()
+        {
+            _settingsManagerMock.Setup(m => m.RequestTimeoutSeconds).Returns(30);
+            _testConnectionServiceMock
+                .Setup(m => m.TestAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(TestConnectionResult.Fail("404 Not Found"));
+
+            var result = await _controller.TestConnectionAsync(
+                "{\"provider\":\"openai\",\"url\":\"https://api.x.ai/v1\"}");
+
+            Assert.That(result, Does.Contain("\"success\":false"));
+            Assert.That(result, Does.Contain("404 Not Found"));
+            Assert.That(result, Does.Contain("\"url\":\"https://api.x.ai/v1\""));
+        }
+
+        [Test]
+        public async Task TestConnectionAsync_MissingProviderOrUrl_IncludesUrlInError()
+        {
+            _settingsManagerMock.Setup(m => m.RequestTimeoutSeconds).Returns(30);
+
+            var result = await _controller.TestConnectionAsync("{\"provider\":\"\",\"url\":\"https://api.x.ai/v1\"}");
+
+            Assert.That(result, Does.Contain("\"success\":false"));
+            Assert.That(result, Does.Contain("Provider and URL are required"));
+            Assert.That(result, Does.Contain("\"url\":\"https://api.x.ai/v1\""));
+            _testConnectionServiceMock.Verify(
+                m => m.TestAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
     }
 }

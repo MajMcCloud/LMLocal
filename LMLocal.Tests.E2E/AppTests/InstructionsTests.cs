@@ -173,4 +173,245 @@ public class InstructionsTests : AppTestBase
         // Verify dialog is closed
         await Expect(dialog).ToBeHiddenAsync(new() { Timeout = 3000 });
     }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_ShowsBuiltInTabs()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        // With no saved file, the draft is built from the built-in defaults.
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('Default')")).ToHaveCountAsync(1);
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('Plan & Execute')")).ToHaveCountAsync(1);
+    }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_DefaultTabNameIsReadOnly()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        // Built-in tab: no editable name field, but prompt and temperature are present.
+        await dialog.Locator(".settings-sidebar button:has-text('Improve')").ClickAsync();
+        await Expect(dialog.Locator("input[data-field='displayName']")).ToHaveCountAsync(0);
+        await Expect(dialog.Locator("textarea[data-field='prompt']")).ToHaveCountAsync(1);
+        await Expect(dialog.Locator("input[data-field='temperature']")).ToHaveCountAsync(1);
+    }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_AddAndDeleteCustomTab()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        // A default tab is active: no delete affordance (only custom instructions are removable).
+        await Expect(dialog.Locator(".tab-delete-btn")).ToHaveCountAsync(0);
+
+        // Add a custom instruction: the add button advertises itself as "Add instruction" and the
+        // new tab becomes active with an editable name field.
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('+ Add')"))
+            .ToHaveAttributeAsync("title", "Add instruction");
+        await dialog.Locator(".settings-sidebar button:has-text('+ Add')").ClickAsync();
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('New Tab')")).ToHaveCountAsync(1);
+        await Expect(dialog.Locator("input[data-field='displayName']")).ToHaveCountAsync(1);
+
+        // The remove control lives in the tab header, immediately after the enable checkbox, and is icon-only.
+        var removeBtn = dialog.Locator(".group-header-row .header-actions > input[type='checkbox'] + .tab-delete-btn");
+        await Expect(removeBtn).ToHaveCountAsync(1);
+        await Expect(removeBtn).ToHaveAttributeAsync("title", "Remove instruction");
+        await Expect(removeBtn.Locator("svg")).ToHaveCountAsync(1);
+
+        // Remove it: the custom instruction disappears and the name field is gone (first default is active).
+        await removeBtn.ClickAsync();
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('New Tab')")).ToHaveCountAsync(0);
+        await Expect(dialog.Locator("input[data-field='displayName']")).ToHaveCountAsync(0);
+        await Expect(dialog.Locator(".tab-delete-btn")).ToHaveCountAsync(0);
+    }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_ShowsSavedCustomTab()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        // A saved custom tab that is NOT part of the built-in defaults.
+        await Page.EvaluateAsync(
+            "() => { window.__instructionsOverride.GetInstructionsAsync = async () => " +
+            "JSON.stringify({ selectedTabId: 50, tabs: [ { id: 50, displayName: 'Mine', enabled: true, temperature: 0.2, prompt: 'hi' } ] }); }");
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        // The saved user tab is present and deletable alongside the reconciled defaults.
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('Mine')")).ToHaveCountAsync(1);
+        await Expect(dialog.Locator(".settings-sidebar button:has-text('Default')")).ToHaveCountAsync(1);
+        await Expect(dialog.Locator(".tab-delete-btn")).ToHaveCountAsync(1);
+    }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_SaveFailure_KeepsDialogOpenAndShowsError()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        // Backend rejects the save.
+        await Page.EvaluateAsync(
+            "() => { window.__instructionsOverride.UpdateInstructionsAsync = async () => " +
+            "JSON.stringify({ success: false, error: 'Validation failed: nope' }); }");
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        await dialog.Locator("#instructions-dialog-confirm").ClickAsync();
+
+        // Dialog stays open and the reason is surfaced to the user.
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 3000 });
+        var error = dialog.Locator(".instructions-error");
+        await Expect(error).ToBeVisibleAsync(new() { Timeout = 3000 });
+        await Expect(error).ToContainTextAsync("nope");
+    }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_TabStateMatrix()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        // Deterministic tabs: id 1 selected + enabled, id 2 enabled but not selected, id 4 disabled.
+        await Page.EvaluateAsync(
+            "() => { window.__instructionsOverride.GetInstructionsAsync = async () => " +
+            "JSON.stringify({ selectedTabId: 1, tabs: [ " +
+            "{ id: 1, displayName: 'Default', enabled: true, temperature: 0.2, prompt: 'p1' }, " +
+            "{ id: 2, displayName: 'Improve', enabled: true, temperature: 0.1, prompt: 'p2' }, " +
+            "{ id: 4, displayName: 'Review', enabled: false, temperature: 0.1, prompt: 'p4' } ] }); }");
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        var tab1 = dialog.Locator(".settings-sidebar button[data-target='1']");
+        var tab2 = dialog.Locator(".settings-sidebar button[data-target='2']");
+        var tab4 = dialog.Locator(".settings-sidebar button[data-target='4']");
+
+        // 1) Selected + enabled: highlighted, full opacity.
+        await Expect(tab1).ToHaveClassAsync("tab-btn active");
+        await Expect(tab1).ToHaveCSSAsync("opacity", "1");
+
+        // 2) Enabled but not selected: no highlight, full opacity.
+        await Expect(tab2).ToHaveClassAsync("tab-btn");
+        await Expect(tab2).ToHaveCSSAsync("opacity", "1");
+
+        // 3) Disabled and not selected: dimmed.
+        await Expect(tab4).ToHaveClassAsync("tab-btn inactive");
+        await Expect(tab4).ToHaveCSSAsync("opacity", "0.5");
+
+        // 4) Selecting the disabled tab keeps the accent highlight but stays dimmed.
+        await tab4.ClickAsync();
+        await Expect(tab4).ToHaveClassAsync("tab-btn active inactive");
+        await Expect(tab4).ToHaveCSSAsync("opacity", "0.5");
+        await Expect(tab1).ToHaveClassAsync("tab-btn");
+        await Expect(tab1).ToHaveCSSAsync("opacity", "1");
+
+        // 5) So does re-selecting the enabled tab: highlight, full opacity.
+        await tab1.ClickAsync();
+        await Expect(tab1).ToHaveClassAsync("tab-btn active");
+        await Expect(tab1).ToHaveCSSAsync("opacity", "1");
+        await Expect(tab4).ToHaveClassAsync("tab-btn inactive");
+
+        // 6) Live toggle: disabling the selected tab dims it without losing the highlight.
+        await dialog.Locator("input[data-field='enabled']").UncheckAsync();
+        await Expect(tab1).ToHaveClassAsync("tab-btn active inactive");
+        await Expect(tab1).ToHaveCSSAsync("opacity", "0.5");
+
+        // 7) Re-enabling restores full opacity.
+        await dialog.Locator("input[data-field='enabled']").CheckAsync();
+        await Expect(tab1).ToHaveClassAsync("tab-btn active");
+        await Expect(tab1).ToHaveCSSAsync("opacity", "1");
+    }
+
+    [Test]
+    [Category("Instructions")]
+    public async Task InstructionsDialog_DeleteSelectsNearestTabAbove()
+    {
+        await GotoWithMockAsync("webview-mock.js");
+        await Expect(Page.Locator("#conn-status"))
+            .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
+
+        await Page.Locator("#menu-btn").ClickAsync();
+        await Page.Locator("button[data-action='open-instructions']").ClickAsync();
+        await Task.Delay(200);
+
+        var dialog = Page.Locator("#instructions-dialog");
+        await Expect(dialog).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await Page.WaitForFunctionAsync("() => document.querySelector('#instructions-dialog .modal-body')?.children.length > 0");
+
+        var sidebar = dialog.Locator(".settings-sidebar");
+
+        // Two custom instructions; they take the next free ids (50, 51) and the newest is active.
+        await sidebar.Locator("button:has-text('+ Add')").ClickAsync();
+        await sidebar.Locator("button:has-text('+ Add')").ClickAsync();
+
+        var firstCustom = sidebar.Locator("button[data-target='50']");
+        var secondCustom = sidebar.Locator("button[data-target='51']");
+        await Expect(firstCustom).ToHaveCountAsync(1);
+        await Expect(secondCustom).ToHaveCountAsync(1);
+        await Expect(secondCustom).ToHaveClassAsync("tab-btn active");
+
+        // Removing the active (last) tab selects the nearest tab above, not the first built-in tab.
+        await dialog.Locator(".tab-delete-btn").ClickAsync();
+        await Expect(secondCustom).ToHaveCountAsync(0);
+        await Expect(firstCustom).ToHaveClassAsync("tab-btn active");
+        // The active tab is the custom one above (it exposes a name field), not a built-in tab.
+        await Expect(dialog.Locator("input[data-field='displayName']")).ToHaveCountAsync(1);
+    }
 }
