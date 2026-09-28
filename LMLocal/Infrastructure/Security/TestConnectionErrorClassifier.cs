@@ -1,5 +1,6 @@
 using System;
 using System.Security.Authentication;
+using LMLocal.Core.Common;
 
 namespace LMLocal.Infrastructure.Security
 {
@@ -28,7 +29,7 @@ namespace LMLocal.Infrastructure.Security
             if (authentication != null)
                 return $"TLS handshake failed: {authentication.Message}";
 
-            return ex.Message;
+            return ExceptionFormatter.Format(ex);
         }
 
         private static T FindInnerException<T>(Exception ex) where T : Exception

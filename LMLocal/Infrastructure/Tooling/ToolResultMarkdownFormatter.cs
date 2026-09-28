@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using LMLocal.Core.Common;
 using Newtonsoft.Json.Linq;
 
@@ -62,17 +63,14 @@ namespace LMLocal.Infrastructure.Tooling
         private static void FormatFileReadResult(System.Text.StringBuilder sb, JObject obj)
         {
             var filePath = obj["file_path"]?.Value<string>() ?? "unknown";
-            var content = obj["content"]?.Value<string>() ?? "";
-            var startLine = obj["start_line"]?.Value<int>() ?? 0;
-            var endLine = obj["end_line"]?.Value<int>() ?? 0;
+            var content = obj["content"] is JArray lines
+                ? string.Join("\n", lines.Select(line => line?.ToString() ?? ""))
+                : obj["content"]?.Value<string>() ?? "";
             var hasMore = obj["has_more_results"]?.Value<bool>() == true;
 
             var lang = MarkdownLanguageHelper.GetLanguageFromExtension(filePath);
-            var lineInfo = startLine > 0 && endLine > 0
-                ? $" (lines {startLine}-{endLine})"
-                : "";
 
-            sb.Append($"**`{filePath}`**{lineInfo}");
+            sb.Append($"**`{filePath}`**");
             if (hasMore)
                 sb.Append(" *(truncated, more lines available)*");
             sb.AppendLine();

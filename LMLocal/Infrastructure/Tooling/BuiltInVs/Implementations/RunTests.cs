@@ -17,7 +17,8 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
     internal interface IRunTests : IBuiltInTool { }
 
     /// <summary>
-    /// Runs tests for a single .NET project. Always builds/runs in the project's own Debug configuration.
+    /// Runs tests for a single .NET project. Does not build; requires a pre-built Debug output
+    /// (run build_solution first). Runs in the project's own Debug configuration.
     /// </summary>
     internal class RunTests : IRunTests
     {
@@ -26,7 +27,6 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
         private readonly IFileSystem _fileSystem;
 
         private static readonly TimeSpan TestRunTimeout = TimeSpan.FromMinutes(10);
-        private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(5);
 
         private const int MaxSummaryOutputChars = 6000;
         private const int CompletionErrorMaxChars = 200;
@@ -60,10 +60,6 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             if (parameters?.TryGetValue("include_full_output", out var fullOutObj) == true && fullOutObj is bool fullOut)
                 includeFullOutput = fullOut;
 
-            bool restore = false;
-            if (parameters?.TryGetValue("restore", out var restoreObj) == true && restoreObj is bool restoreVal)
-                restore = restoreVal;
-
             string filter = null;
             if (parameters?.TryGetValue("filter", out var filterObj) == true && filterObj is string filterStr && !string.IsNullOrWhiteSpace(filterStr))
                 filter = TestArgumentsBuilder.SanitizeFilter(filterStr.Trim());
@@ -90,8 +86,8 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             bool isSdk = await SdkProjectDetector.IsSdkStyleAsync(_fileSystem, absoluteProjectPath, cancellationToken).ConfigureAwait(false);
 
             var (Success, Output, Total, Passed, Failed, Skipped) = isSdk
-                ? await RunSdkTestsAsync(absoluteProjectPath, solutionDir, filter, includeFullOutput, restore, customTimeout, cancellationToken).ConfigureAwait(false)
-                : await RunLegacyTestsAsync(absoluteProjectPath, solutionDir, filter, includeFullOutput, restore, customTimeout, cancellationToken).ConfigureAwait(false);
+                ? await RunSdkTestsAsync(absoluteProjectPath, solutionDir, filter, includeFullOutput, customTimeout, cancellationToken).ConfigureAwait(false)
+                : await RunLegacyTestsAsync(absoluteProjectPath, solutionDir, filter, includeFullOutput, customTimeout, cancellationToken).ConfigureAwait(false);
 
             string errorMessage = null;
             if (!Success)
@@ -118,11 +114,10 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             string workingDirectory,
             string filter,
             bool includeFullOutput,
-            bool restore,
             TimeSpan? timeout,
             CancellationToken cancellationToken)
         {
-            string arguments = TestArgumentsBuilder.BuildSdkTestArguments(projectPath, filter, restore);
+            string arguments = TestArgumentsBuilder.BuildSdkTestArguments(projectPath, filter);
             return await RunAndSummarizeAsync(arguments, workingDirectory, includeFullOutput, timeout, cancellationToken).ConfigureAwait(false);
         }
 
@@ -131,7 +126,6 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             string workingDirectory,
             string filter,
             bool includeFullOutput,
-            bool restore,
             TimeSpan? timeout,
             CancellationToken cancellationToken)
         {
@@ -140,28 +134,9 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
 
             if (!_fileSystem.FileExists(dllPath))
             {
-                TimeSpan buildTimeout = timeout ?? BuildTimeout;
-                var buildResult = await DotnetProcessRunner.RunAsync(
-                    TestArgumentsBuilder.BuildBuildArguments(projectPath, restore),
-                    workingDirectory,
-                    buildTimeout,
-                    cancellationToken).ConfigureAwait(false);
-
-                if (buildResult.Cancelled)
-                    return (false, "Build cancelled.", 0, 0, 0, 0);
-                if (buildResult.TimedOut)
-                    return (false, $"Build timed out after {buildTimeout.TotalMinutes:0} minute(s).", 0, 0, 0, 0);
-                if (buildResult.ExitCode != 0)
-                {
-                    string detail = TestOutputParser.ExtractDiagnosticSummary(buildResult.StdErr)
-                        ?? TestOutputParser.ExtractDiagnosticSummary(buildResult.StdOut)
-                        ?? (string.IsNullOrWhiteSpace(buildResult.StdErr) ? buildResult.StdOut : buildResult.StdErr);
-                    string errorMsg = $"Build failed (exit code {buildResult.ExitCode}).\n{LimitOutput(detail, MaxSummaryOutputChars)}";
-                    return (false, errorMsg, 0, 0, 0, 0);
-                }
-
-                if (!_fileSystem.FileExists(dllPath))
-                    return (false, $"Test DLL not found after build: {dllPath}", 0, 0, 0, 0);
+                return (false,
+                    $"Test assembly not found: {dllPath}\nRun build_solution first (Debug configuration) to build the project before running tests.",
+                    0, 0, 0, 0);
             }
 
             string arguments = TestArgumentsBuilder.BuildLegacyVstestArguments(dllPath, filter);
@@ -185,7 +160,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             if (runResult.Cancelled)
                 return (false, "Test execution cancelled by user.", 0, 0, 0, 0);
             if (runResult.TimedOut)
-                return (false, $"Test execution timed out.", 0, 0, 0, 0); 
+                return (false, $"Test execution timed out.", 0, 0, 0, 0);
 
             string fullOutput = runResult.StdOut + (string.IsNullOrEmpty(runResult.StdErr) ? "" : "\n" + runResult.StdErr);
             var (total, passed, failed, skipped) = TestOutputParser.ParseStatisticsUniversal(fullOutput);
@@ -268,17 +243,12 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             var fullOutput = false;
             if (parameters?.TryGetValue("include_full_output", out var fullObj) == true && fullObj is bool full)
                 fullOutput = full;
-            var restore = false;
-            if (parameters?.TryGetValue("restore", out var restoreObj) == true && restoreObj is bool restoreVal)
-                restore = restoreVal;
             var filter = parameters?.TryGetValue("filter", out var f) == true ? f?.ToString() : null;
             var timeout = parameters?.TryGetValue("timeout_seconds", out var t) == true && t is int ts ? ts : (int?)null;
 
             var msg = $"Running tests for '{proj}'";
             if (fullOutput)
                 msg += " (full output enabled)";
-            if (restore)
-                msg += " (restore enabled)";
             if (!string.IsNullOrWhiteSpace(filter))
                 msg += $", filter: '{filter}'";
             if (timeout.HasValue)
@@ -320,7 +290,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Runs tests for a .NET project in Debug configuration and returns summary statistics plus failure details (not the full log). Use 'include_full_output': true to get the complete console log, and 'filter' to run only tests whose name matches.",
+                Description = "Runs the project's pre-built test assembly and returns summary statistics plus failure details (not the full log). It does not build the project; run build_solution first when you change code, otherwise the existing build is tested. Assumes a Debug build - build with a Debug configuration. Use 'include_full_output': true to get the complete console log, and 'filter' to run only tests whose name matches.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",
@@ -341,15 +311,10 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                             Type = "boolean",
                             Description = "Defaults to false. If true, returns the full stdout/stderr log instead of just summary/failures."
                         },
-                        ["restore"] = new ToolDetails
-                        {
-                            Type = "boolean",
-                            Description = "Defaults to false (uses --no-restore). If true, lets 'dotnet test'/'dotnet build' run NuGet restore implicitly (omit --no-restore). Use it when project.assets.json is missing or out of date."
-                        },
                         ["timeout_seconds"] = new ToolDetails
                         {
                             Type = "integer",
-                            Description = "Optional timeout in seconds for the entire operation (build + test). If not provided, defaults to 5 minutes for build and 10 minutes for tests individually. When set, this single value applies to both build and test steps (the larger of the two is not used; both steps get this timeout)."
+                            Description = "Optional timeout in seconds for the test run. If not provided, defaults to 10 minutes."
                         }
                     },
                     Required = new List<string> { "project_path" }

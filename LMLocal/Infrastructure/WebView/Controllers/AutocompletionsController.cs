@@ -130,7 +130,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
             catch (Exception ex)
             {
                 InternalLogger.Error("ListModelsForProviderAsync failed", ex);
-                return new { Error = "Failed to list models: " + ex.Message }.ToJson();
+                return new { Error = "Failed to list models: " + ExceptionFormatter.Format(ex) }.ToJson();
             }
         }
 
@@ -164,7 +164,7 @@ namespace LMLocal.Infrastructure.WebView.Controllers
             catch (Exception ex)
             {
                 InternalLogger.Error("TestCompletionAsync failed", ex);
-                return new { success = false, error = ex.Message, url = baseUrl }.ToJson();
+                return new { success = false, error = ExceptionFormatter.Format(ex), url = baseUrl }.ToJson();
             }
         }
     }

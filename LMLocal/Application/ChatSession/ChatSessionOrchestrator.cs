@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LMLocal.Application.Chat;
 using LMLocal.Application.ChatSessionStream;
+using LMLocal.Application.SubAgents;
 using LMLocal.Application.Tool;
 using LMLocal.Core.Common;
 using LMLocal.Core.Models;
@@ -50,6 +51,8 @@ namespace LMLocal.Application.ChatSession
         private readonly IHistoryCompactor _compactor;
         private readonly ISnapshotManager _snapshotManager;
         private readonly IToolCallLoopDetector _loopDetector;
+        private readonly ISubAgentsParallelPolicy _parallelPolicy;
+        private readonly ISubAgentsParallelRunner _parallelRunner;
         private readonly object _resetLock = new object();
 
         private const int MAX_TOOL_ITERATIONS = 9999;
@@ -87,13 +90,17 @@ namespace LMLocal.Application.ChatSession
             IToolExecutionManager toolManager,
             IHistoryCompactor compactor,
             ISnapshotManager snapshotManager,
-            IToolCallLoopDetector loopDetector)
+            IToolCallLoopDetector loopDetector,
+            ISubAgentsParallelPolicy parallelPolicy,
+            ISubAgentsParallelRunner parallelRunner)
         {
             _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
             _toolManager = toolManager ?? throw new ArgumentNullException(nameof(toolManager));
             _compactor = compactor ?? throw new ArgumentNullException(nameof(compactor));
             _snapshotManager = snapshotManager ?? throw new ArgumentNullException(nameof(snapshotManager));
             _loopDetector = loopDetector ?? throw new ArgumentNullException(nameof(loopDetector));
+            _parallelPolicy = parallelPolicy ?? throw new ArgumentNullException(nameof(parallelPolicy));
+            _parallelRunner = parallelRunner ?? throw new ArgumentNullException(nameof(parallelRunner));
         }
 
         public async Task RunSessionAsync(
@@ -106,6 +113,11 @@ namespace LMLocal.Application.ChatSession
                 _sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             }
             var sessionToken = _sessionCts.Token;
+
+            var messageSink = onMessage != null ? new SerializingMessageSink(onMessage) : null;
+            Func<WebView2ScriptMessage, Task> send = messageSink != null
+                ? (Func<WebView2ScriptMessage, Task>)messageSink.SendAsync
+                : null;
 
             var sessionContext = new SessionStateContext
             {
@@ -147,7 +159,7 @@ namespace LMLocal.Application.ChatSession
                             continue;
                         }
 
-                        var nextState = await handler(this, sessionContext, context, onMessage, sessionToken).ConfigureAwait(false);
+                        var nextState = await handler(this, sessionContext, context, send, sessionToken).ConfigureAwait(false);
 
                         InternalLogger.Info($"ChatSessionOrchestrator: State {sessionContext.CurrentState} -> {nextState}");
 
@@ -257,7 +269,7 @@ namespace LMLocal.Application.ChatSession
 
             if (context.LastResult.ToolCalls == null || context.LastResult.ToolCalls.Count == 0)
             {
-                InternalLogger.Info($"ChatSessionOrchestrator: No tool calls detected in generation result. Completing session.");
+                InternalLogger.Info("ChatSessionOrchestrator: No tool calls detected in generation result. Completing session.");
                 context.ConsecutiveToolIterationCount = 0;
                 context.ConsecutiveDuplicateToolRounds = 0;
 
@@ -314,7 +326,7 @@ namespace LMLocal.Application.ChatSession
                     context.LastException = new InvalidOperationException(
                         $"Execution halted: tool(s) [{names}] called with identical arguments " +
                         $"{context.ConsecutiveDuplicateToolRounds} times in a row. " +
-                        $"The model appears to be stuck in a loop.");
+                        "The model appears to be stuck in a loop.");
 
                     return ChatSessionState.Error;
                 }
@@ -334,48 +346,108 @@ namespace LMLocal.Application.ChatSession
             await _snapshotManager.BeginBatchAsync(ct).ConfigureAwait(false);
             try
             {
-                foreach (var toolCall in context.LastResult.ToolCalls)
+                var allCalls = context.LastResult.ToolCalls;
+
+                var parallelIdx = new List<int>();
+                var sequentialIdx = new List<int>();
+
+                for (int i = 0; i < allCalls.Count; i++)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    var call = allCalls[i];
+                    if (call != null && _parallelPolicy.IsParallelEnabled(call.FunctionName))
+                        parallelIdx.Add(i);
+                    else
+                        sequentialIdx.Add(i);
+                }
 
-                    var processingMessage = _toolManager.GetProcessingMessage(toolCall);
+                var ordered = new ToolResultMessage[allCalls.Count];
 
-                    await onMessage(new WebView2ToolCallMessage
+                if (parallelIdx.Count > 1)
+                {
+                    var parallelCalls = new List<ToolCallRecord>(parallelIdx.Count);
+                    foreach (var i in parallelIdx)
+                        parallelCalls.Add(allCalls[i]);
+
+                    var groupMaxParallel = parallelCalls
+                        .Select(c => _parallelPolicy.ResolveMaxParallel(c.FunctionName))
+                        .DefaultIfEmpty(SubAgentsConfig.DefaultMaxParallel)
+                        .Min();
+                    if (groupMaxParallel < 1)
+                        groupMaxParallel = SubAgentsConfig.DefaultMaxParallel;
+
+                    InternalLogger.Info($"ChatSessionOrchestrator: Running {parallelCalls.Count} SubAgents in parallel (max {groupMaxParallel} concurrently).");
+
+
+                    string groupId = Guid.NewGuid().ToString("N");
+                    var groupCallIds = parallelCalls.Select(c => c.CallId).ToList();
+                    int groupTotal = parallelCalls.Count;
+                    int groupCompleted = 0;
+
+                    await onMessage(new WebView2ToolGroupMessage
                     {
-                        Type = WebView2MessageType.StreamToolCall,
-                        FunctionName = toolCall.FunctionName,
-                        CallId = toolCall.CallId,
-                        ArgumentsJson = toolCall.ArgumentsJson,
-                        Message = processingMessage
+                        Type = WebView2MessageType.StreamToolGroupStart,
+                        GroupId = groupId,
+                        CallIds = groupCallIds,
+                        Total = groupTotal,
+                        Completed = 0
                     }).ConfigureAwait(false);
 
-                    using (var toolCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                    var groupResult = await _parallelRunner.RunAsync(
+                        parallelCalls,
+                        async (call, callCt) =>
+                        {
+                            var callResult = await RunToolCallAsync(call, onMessage, callCt).ConfigureAwait(false);
+
+                            int completed = Interlocked.Increment(ref groupCompleted);
+                            await onMessage(new WebView2ToolGroupMessage
+                            {
+                                Type = WebView2MessageType.StreamToolGroupProgress,
+                                GroupId = groupId,
+                                CallIds = groupCallIds,
+                                Total = groupTotal,
+                                Completed = completed
+                            }).ConfigureAwait(false);
+
+                            return callResult;
+                        },
+                        groupMaxParallel,
+                        ct).ConfigureAwait(false);
+
+                    await onMessage(new WebView2ToolGroupMessage
                     {
-                        toolCts.CancelAfter(_toolManager.GetToolTimeout(toolCall.FunctionName) ??
-                                            TimeSpan.FromMilliseconds(TOOL_EXECUTION_TIMEOUT_MS));
+                        Type = WebView2MessageType.StreamToolGroupEnd,
+                        GroupId = groupId,
+                        CallIds = groupCallIds,
+                        Total = groupTotal,
+                        Completed = groupTotal
+                    }).ConfigureAwait(false);
 
-                        var stepProgress = new ToolActivityForwarder(toolCall.CallId, onMessage);
-                        var toolResult = await _toolManager.ExecuteToolAsync(toolCall, toolCts.Token, stepProgress).ConfigureAwait(false);
-
-                        ct.ThrowIfCancellationRequested();
-
-                        context.ToolResultsForNextRound.Add(new ToolResultMessage
-                        {
-                            ToolCallId = toolCall.CallId,
-                            ToolName = toolCall.FunctionName,
-                            Result = string.IsNullOrEmpty(toolResult.Error) ? toolResult.Result : toolResult.Error,
-                            Error = toolResult.Error
-                        });
-
-                        await onMessage(new WebView2ToolCallMessage
-                        {
-                            Type = WebView2MessageType.StreamToolEnd,
-                            FunctionName = toolCall.FunctionName,
-                            CallId = toolCall.CallId,
-                            Message = string.IsNullOrEmpty(toolResult.Error) ? toolResult.CompletionMessage : toolResult.UserMessage,
-                            IsError = !string.IsNullOrEmpty(toolResult.Error)
-                        }).ConfigureAwait(false);
+                    for (int j = 0; j < parallelCalls.Count; j++)
+                    {
+                        ordered[parallelIdx[j]] = ToToolResultMessage(parallelCalls[j], groupResult.Results[j]);
                     }
+                }
+                else if (parallelIdx.Count == 1)
+                {
+                    // A single agent has nothing to overlap with; run it inline.
+                    ct.ThrowIfCancellationRequested();
+                    var call = allCalls[parallelIdx[0]];
+                    var result = await RunToolCallAsync(call, onMessage, ct).ConfigureAwait(false);
+                    ordered[parallelIdx[0]] = ToToolResultMessage(call, result);
+                }
+
+                foreach (var i in sequentialIdx)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var call = allCalls[i];
+                    var result = await RunToolCallAsync(call, onMessage, ct).ConfigureAwait(false);
+                    ordered[i] = ToToolResultMessage(call, result);
+                }
+
+                foreach (var result in ordered)
+                {
+                    if (result != null)
+                        context.ToolResultsForNextRound.Add(result);
                 }
             }
 
@@ -425,6 +497,60 @@ namespace LMLocal.Application.ChatSession
 
             context.ConsecutiveToolIterationCount = 0;
             return ChatSessionState.Completing;
+        }
+
+        /// <summary>
+        /// Runs one tool call: emits StreamToolCall, executes with a per-call timeout while forwarding progress steps, then emits StreamToolEnd.
+        /// </summary>
+        private async Task<ToolExecutionResult> RunToolCallAsync(
+            ToolCallRecord toolCall,
+            Func<WebView2ScriptMessage, Task> onMessage,
+            CancellationToken ct)
+        {
+            var processingMessage = _toolManager.GetProcessingMessage(toolCall);
+
+            await onMessage(new WebView2ToolCallMessage
+            {
+                Type = WebView2MessageType.StreamToolCall,
+                FunctionName = toolCall.FunctionName,
+                CallId = toolCall.CallId,
+                ArgumentsJson = toolCall.ArgumentsJson,
+                Message = processingMessage
+            }).ConfigureAwait(false);
+
+            ToolExecutionResult toolResult;
+            using (var toolCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                toolCts.CancelAfter(_toolManager.GetToolTimeout(toolCall.FunctionName) ??
+                                    TimeSpan.FromMilliseconds(TOOL_EXECUTION_TIMEOUT_MS));
+
+                var stepProgress = new ToolActivityForwarder(toolCall.CallId, onMessage);
+                toolResult = await _toolManager.ExecuteToolAsync(toolCall, toolCts.Token, stepProgress).ConfigureAwait(false);
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            await onMessage(new WebView2ToolCallMessage
+            {
+                Type = WebView2MessageType.StreamToolEnd,
+                FunctionName = toolCall.FunctionName,
+                CallId = toolCall.CallId,
+                Message = string.IsNullOrEmpty(toolResult.Error) ? toolResult.CompletionMessage : toolResult.UserMessage,
+                IsError = !string.IsNullOrEmpty(toolResult.Error)
+            }).ConfigureAwait(false);
+
+            return toolResult;
+        }
+
+        private static ToolResultMessage ToToolResultMessage(ToolCallRecord toolCall, ToolExecutionResult toolResult)
+        {
+            return new ToolResultMessage
+            {
+                ToolCallId = toolCall.CallId,
+                ToolName = toolCall.FunctionName,
+                Result = string.IsNullOrEmpty(toolResult.Error) ? toolResult.Result : toolResult.Error,
+                Error = toolResult.Error
+            };
         }
 
         /// <summary>

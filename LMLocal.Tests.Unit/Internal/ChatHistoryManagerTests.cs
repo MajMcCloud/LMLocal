@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 using System.Linq;
@@ -1419,10 +1420,10 @@ namespace LMLocal.Tests.Unit
         }
 
         [Test]
-        public async Task ConsolidateLastExchange_OrphanedToolCallAssistant_KeepsExtraContent()
+        public async Task ConsolidateLastExchange_OrphanedToolCallAssistant_StartsNewSession()
         {
-            // Interrupted chain (6.11): user → assistant(tool_calls) without tool results.
-            // Consolidate keeps the final assistant by reference => ExtraContent survives.
+            // Interrupted chain (6.11): user → assistant(tool_calls) with no text and no tool results.
+            // There is no completed step (assistant reply with text) => nothing is carried over, empty new session.
             var manager = CreateManager();
             manager.AddUserMessage("check flight");
             manager.AddAssistantMessage(null, new List<ToolCallRecord>
@@ -1433,10 +1434,254 @@ namespace LMLocal.Tests.Unit
             await manager.ConsolidateLastExchangeAsync();
 
             var history = manager.GetHistoryCopy();
+            Assert.That(history.Count, Is.EqualTo(0));
+        }
+
+        [Test]
+        public async Task ConsolidateLastExchange_FinalTextAnswer_KeepsExtraContent()
+        {
+            // Valid step: the final assistant has text and carries a tool call with extra content.
+            // The final assistant is kept by reference => its ExtraContent survives.
+            var manager = CreateManager();
+            manager.AddUserMessage("check flight");
+            manager.AddAssistantMessage("Done.", new List<ToolCallRecord>
+            {
+                new ToolCallRecord { CallId = "c1", FunctionName = "check_flight", ArgumentsJson = "{\"flight\":\"AA100\"}", ExtraContentJson = "{\"google\":{\"thought_signature\":\"sigB\"}}" }
+            });
+
+            await manager.ConsolidateLastExchangeAsync();
+
+            var history = manager.GetHistoryCopy();
             Assert.That(history.Count, Is.EqualTo(2));
             var stored = (List<ToolCall>)history[1].ToolCalls;
             Assert.That(stored, Is.Not.Null);
-            Assert.That(JToken.DeepEquals(stored[0].ExtraContent, Sig("sigA")), Is.True);
+            Assert.That(JToken.DeepEquals(stored[0].ExtraContent, Sig("sigB")), Is.True);
+        }
+
+        // ================ Last completed step selection (assistant with text) ================
+
+        private static Mock<IChatPersistenceService> CreatePersistenceMock()
+        {
+            var mock = new Mock<IChatPersistenceService>();
+            mock.Setup(p => p.MarkNewSessionAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            mock.Setup(p => p.SaveMessagesAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            mock.Setup(p => p.SaveLastMessageAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            return mock;
+        }
+
+        private static ChatHistoryManager CreateManager(Mock<IChatPersistenceService> persistence, IToolResultMarkdownFormatter formatter = null)
+        {
+            var mockSettings = new Mock<ISettingsManager>();
+            mockSettings.Setup(s => s.SystemPrompt).Returns("sys");
+            mockSettings.Setup(s => s.Current).Returns(new AppSettings());
+            return new ChatHistoryManager(mockSettings.Object, persistence.Object, formatter);
+        }
+
+        private static List<ToolCallRecord> ToolCalls(params (string CallId, string Name)[] calls)
+        {
+            var list = new List<ToolCallRecord>();
+            foreach (var call in calls)
+            {
+                list.Add(new ToolCallRecord { CallId = call.CallId, FunctionName = call.Name, ArgumentsJson = "{}" });
+            }
+            return list;
+        }
+
+        [Test]
+        public async Task ConsolidateLastExchange_LastAssistantHasNoText_FallsBackToPreviousStep()
+        {
+            var persistence = CreatePersistenceMock();
+            var manager = CreateManager(persistence);
+
+            // q2's cycle ends with an assistant that has no text (only tool calls) and no tool results.
+            manager.AddUserMessage("q1");
+            manager.AddAssistantMessage("a1");
+            manager.AddUserMessage("q2");
+            manager.AddAssistantMessage(null, ToolCalls(("c1", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[] { new ChatMessage("tool", "{\"ok\":true}", "c1") });
+
+            await manager.ConsolidateLastExchangeAsync();
+
+            var history = manager.GetHistoryCopy();
+            Assert.That(history.Count, Is.EqualTo(2));
+            Assert.That(history[0].Content, Is.EqualTo("q1"));
+            Assert.That(history[1].Content, Is.EqualTo("a1"));
+        }
+
+        [Test]
+        public async Task ConsolidateLastExchange_FallsBackOverUnfinishedMultiRoundCycle()
+        {
+            var persistence = CreatePersistenceMock();
+            var manager = CreateManager(persistence);
+
+            // The unfinished cycle spans several assistant/tool rounds without a text answer.
+            manager.AddUserMessage("q1");
+            manager.AddAssistantMessage("a1");
+            manager.AddUserMessage("q2");
+            manager.AddAssistantMessage(null, ToolCalls(("c1", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[] { new ChatMessage("tool", "{\"ok\":true}", "c1") });
+            manager.AddAssistantMessage(null, ToolCalls(("c2", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[] { new ChatMessage("tool", "{\"ok\":true}", "c2") });
+
+            await manager.ConsolidateLastExchangeAsync();
+
+            var history = manager.GetHistoryCopy();
+            Assert.That(history.Count, Is.EqualTo(2));
+            Assert.That(history[0].Content, Is.EqualTo("q1"));
+            Assert.That(history[1].Content, Is.EqualTo("a1"));
+        }
+
+        [Test]
+        public async Task ConsolidateLastExchange_TrailingUserWithoutAnswer_FallsBack()
+        {
+            var persistence = CreatePersistenceMock();
+            var manager = CreateManager(persistence);
+
+            // q2 is an interrupted prompt: no assistant reply at all.
+            manager.AddUserMessage("q1");
+            manager.AddAssistantMessage("a1");
+            manager.AddUserMessage("q2");
+
+            await manager.ConsolidateLastExchangeAsync();
+
+            var history = manager.GetHistoryCopy();
+            Assert.That(history.Count, Is.EqualTo(2));
+            Assert.That(history[0].Content, Is.EqualTo("q1"));
+            Assert.That(history[1].Content, Is.EqualTo("a1"));
+        }
+
+        [Test]
+        public async Task ConsolidateLastExchange_NoTextAnswerAnywhere_StartsNewSession()
+        {
+            var persistence = CreatePersistenceMock();
+            var manager = CreateManager(persistence);
+
+            // The only assistant has tool calls but no text — no completed step exists.
+            manager.AddUserMessage("q1");
+            manager.AddAssistantMessage(null, ToolCalls(("c1", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[] { new ChatMessage("tool", "{\"ok\":true}", "c1") });
+
+            persistence.Invocations.Clear();
+
+            await manager.ConsolidateLastExchangeAsync();
+
+            Assert.That(manager.GetHistoryCopy().Count, Is.EqualTo(0));
+            persistence.Verify(p => p.MarkNewSessionAsync(It.IsAny<CancellationToken>()), Times.Once);
+            persistence.Verify(
+                p => p.SaveMessagesAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Test]
+        public async Task MoveLastExchangeToNewSession_UnfinishedCycleAfterEnd_NotCarried()
+        {
+            var persistence = CreatePersistenceMock();
+            List<ChatMessage> saved = null;
+            persistence
+                .Setup(p => p.SaveMessagesAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()))
+                .Callback<IEnumerable<ChatMessage>, CancellationToken>((messages, _) => saved = new List<ChatMessage>(messages))
+                .Returns(Task.CompletedTask);
+
+            var manager = CreateManager(persistence);
+
+            manager.AddUserMessage("q1");
+            manager.AddAssistantMessage("a1");
+            manager.AddUserMessage("q2");
+            manager.AddAssistantMessage(null, ToolCalls(("c1", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[] { new ChatMessage("tool", "{\"ok\":true}", "c1") });
+
+            await manager.MoveLastExchangeToNewSessionAsync();
+
+            var history = manager.GetHistoryCopy();
+            Assert.That(history.Count, Is.EqualTo(2));
+            Assert.That(history[0].Content, Is.EqualTo("q1"));
+            Assert.That(history[1].Content, Is.EqualTo("a1"));
+
+            Assert.That(saved, Is.Not.Null);
+            Assert.That(saved.Count, Is.EqualTo(2));
+            Assert.That(saved[0].Content, Is.EqualTo("q1"));
+            Assert.That(saved[1].Content, Is.EqualTo("a1"));
+        }
+
+        [Test]
+        public async Task ConsolidateLastExchange_LimitedInfoCarried_OnlyUserAndFinalAssistant()
+        {
+            var persistence = CreatePersistenceMock();
+            var manager = CreateManager(persistence, new ToolResultMarkdownFormatter());
+
+            manager.AddUserMessage("read file");
+            manager.AddAssistantMessage(null, ToolCalls(("c1", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[]
+            {
+                new ChatMessage("tool",
+                    "{\"file_path\":\"src/Program.cs\",\"content\":\"using System;\",\"success\":true}", "c1")
+            });
+            manager.AddAssistantMessage("Here is the file content.");
+
+            await manager.ConsolidateLastExchangeAsync();
+
+            var history = manager.GetHistoryCopy();
+            Assert.That(history.Count, Is.EqualTo(2));
+            Assert.That(history[0].Role, Is.EqualTo("user"));
+            Assert.That(history[1].Role, Is.EqualTo("assistant"));
+            Assert.That(history[1].Content, Is.EqualTo("Here is the file content."));
+
+            var userContent = history[0].Content as string;
+            Assert.That(userContent, Does.Contain("read file"));
+            Assert.That(userContent, Does.Contain("## Tool Results"));
+            Assert.That(userContent, Does.Contain("src/Program.cs"));
+        }
+
+        [Test]
+        public async Task MoveLastExchangeToNewSession_DoubleInvocation_IsIdempotent()
+        {
+            var persistence = CreatePersistenceMock();
+            var manager = CreateManager(persistence);
+
+            manager.AddUserMessage("q1");
+            manager.AddAssistantMessage("a1");
+
+            await manager.MoveLastExchangeToNewSessionAsync();
+            var first = manager.GetHistoryCopy();
+
+            await manager.MoveLastExchangeToNewSessionAsync();
+            var second = manager.GetHistoryCopy();
+
+            Assert.That(first.Count, Is.EqualTo(2));
+            Assert.That(second.Count, Is.EqualTo(2));
+            Assert.That(second[0].Content, Is.EqualTo("q1"));
+            Assert.That(second[1].Content, Is.EqualTo("a1"));
+            persistence.Verify(p => p.MarkNewSessionAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        }
+
+        [Test]
+        public async Task MoveLastExchangeToNewSession_PersistsFragmentExactlyOnce()
+        {
+            var persistence = CreatePersistenceMock();
+            List<ChatMessage> saved = null;
+            persistence
+                .Setup(p => p.SaveMessagesAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()))
+                .Callback<IEnumerable<ChatMessage>, CancellationToken>((messages, _) => saved = new List<ChatMessage>(messages))
+                .Returns(Task.CompletedTask);
+
+            var manager = CreateManager(persistence);
+
+            manager.AddUserMessage("do something");
+            manager.AddAssistantMessage(null, ToolCalls(("c1", "read_file_lines")));
+            manager.AddToolExecutionResultMessages(new[] { new ChatMessage("tool", "{\"ok\":true}", "c1") });
+            manager.AddAssistantMessage("done");
+
+            persistence.Invocations.Clear();
+
+            await manager.MoveLastExchangeToNewSessionAsync();
+
+            persistence.Verify(
+                p => p.SaveMessagesAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+            Assert.That(saved, Is.Not.Null);
+            Assert.That(saved.Count, Is.EqualTo(4));
+            Assert.That(saved[0].Content, Is.EqualTo("do something"));
+            Assert.That(saved[3].Content, Is.EqualTo("done"));
         }
 
     }

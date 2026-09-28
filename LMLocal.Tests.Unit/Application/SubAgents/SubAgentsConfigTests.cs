@@ -304,6 +304,143 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             Assert.That(noTimeout.TimeoutSeconds, Is.EqualTo(0));
         }
 
+        // =========================================================================
+        // Parallel / MaxParallel (subagent fan-out)
+        // =========================================================================
+
+        [Test]
+        public void Parse_ParallelAndMaxParallel_ParsesTopLevelAndAgent()
+        {
+            var cfg = Parse("{ \"parallel\": true, \"maxParallel\": 4, \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\" }, { \"id\": \"b\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\", \"parallel\": true, \"maxParallel\": 3 } ] }");
+
+            Assert.That(cfg.Parallel, Is.True);
+            Assert.That(cfg.MaxParallel, Is.EqualTo(4));
+            Assert.That(cfg.Agents[0].Parallel, Is.False);
+            Assert.That(cfg.Agents[0].MaxParallel, Is.Null);
+            Assert.That(cfg.Agents[1].Parallel, Is.True);
+            Assert.That(cfg.Agents[1].MaxParallel, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void Parallel_Absent_DefaultsToFalseAndNull()
+        {
+            var cfg = Parse("{ \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\" } ] }");
+
+            Assert.That(cfg.Parallel, Is.False);
+            Assert.That(cfg.MaxParallel, Is.Null);
+            Assert.That(cfg.Agents[0].Parallel, Is.False);
+            Assert.That(cfg.Agents[0].MaxParallel, Is.Null);
+        }
+
+        [Test]
+        public void DefaultMaxParallel_IsTwo()
+        {
+            Assert.That(SubAgentsConfig.DefaultMaxParallel, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ApplyDefaults_ParallelAndMaxParallel_FilledFromRoot()
+        {
+            var cfg = Parse("{ \"parallel\": true, \"maxParallel\": 5, \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\" } ] }");
+
+            cfg.ApplyDefaults();
+
+            Assert.That(cfg.Agents[0].Parallel, Is.True);
+            Assert.That(cfg.Agents[0].MaxParallel, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void ApplyDefaults_AgentParallelAndMaxParallel_OverrideRoot()
+        {
+            var cfg = Parse("{ \"parallel\": false, \"maxParallel\": 5, \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\", \"parallel\": true, \"maxParallel\": 2 } ] }");
+
+            cfg.ApplyDefaults();
+
+            Assert.That(cfg.Agents[0].Parallel, Is.True);
+            Assert.That(cfg.Agents[0].MaxParallel, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ApplyDefaults_RootParallelTrue_EnablesAgentsWithoutOwnFlag()
+        {
+            var cfg = Parse("{ \"parallel\": true, \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\", \"parallel\": false } ] }");
+
+            cfg.ApplyDefaults();
+
+            // bool has no "unset" state: a top-level true enables every agent.
+            Assert.That(cfg.Agents[0].Parallel, Is.True);
+        }
+
+        [Test]
+        public void ApplyDefaults_NoParallelConfig_LeavesParallelOff()
+        {
+            var cfg = Parse("{ \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\" } ] }");
+
+            cfg.ApplyDefaults();
+
+            Assert.That(cfg.Agents[0].Parallel, Is.False);
+            Assert.That(cfg.Agents[0].MaxParallel, Is.Null);
+        }
+
+        [Test]
+        public void Clone_CopiesParallelAndMaxParallel()
+        {
+            var cfg = Parse("{ \"parallel\": true, \"maxParallel\": 4, \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\", \"parallel\": true, \"maxParallel\": 3 } ] }");
+
+            var clone = cfg.Clone();
+
+            Assert.That(clone.Parallel, Is.True);
+            Assert.That(clone.MaxParallel, Is.EqualTo(4));
+            Assert.That(clone.Agents[0].Parallel, Is.True);
+            Assert.That(clone.Agents[0].MaxParallel, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void Validate_AgentMaxParallelLessThanOne_ReportsError()
+        {
+            var cfg = Parse("{ \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\", \"maxParallel\": 0 } ] }");
+
+            var errors = cfg.Validate();
+
+            Assert.That(errors.Any(e => e.Contains("'maxParallel' must be >= 1")), Is.True);
+        }
+
+        [Test]
+        public void Validate_TopLevelMaxParallelLessThanOne_ReportsError()
+        {
+            var cfg = Parse("{ \"maxParallel\": 0, \"agents\": [ { \"id\": \"a\", \"description\": \"d\", \"model\": \"m\", \"customBaseUrl\": \"http://x\" } ] }");
+
+            var errors = cfg.Validate();
+
+            Assert.That(errors.Any(e => e.Contains("'maxParallel' must be >= 1")), Is.True);
+        }
+
+        [Test]
+        public void Writer_ParallelAndMaxParallel_RoundTrip()
+        {
+            var cfg = new SubAgentsConfig { Parallel = true, MaxParallel = 4 };
+            cfg.Agents.Add(new SubAgentDefinition
+            {
+                Id = "a",
+                Description = "d",
+                Model = "m",
+                CustomBaseUrl = "http://x",
+                Parallel = true,
+                MaxParallel = 3
+            });
+
+            var json = cfg.ToJsonIndented();
+            var parsed = json.FromJson<SubAgentsConfig>();
+
+            Assert.That(json, Does.Contain("\"parallel\": true"));
+            Assert.That(json, Does.Contain("\"maxParallel\": 3"));
+            Assert.That(parsed.Parallel, Is.True);
+            Assert.That(parsed.MaxParallel, Is.EqualTo(4));
+            Assert.That(parsed.Agents[0].Parallel, Is.True);
+            Assert.That(parsed.Agents[0].MaxParallel, Is.EqualTo(3));
+        }
+
+
         [Test]
         public void Parse_FullConfig_ParsesAllFields()
         {

@@ -304,11 +304,12 @@ namespace LMLocal.Tests.Unit.Infrastructure.SubAgents
                 .Callback<SubAgentRunRequest, CancellationToken>((req, ct) => captured = req)
                 .ReturnsAsync(new SubAgentsRunResponse { Success = true, Content = "ok" });
 
-            await _source.ExecuteAsync(
+            var result = await _source.ExecuteAsync(
                 "researcher",
                 new Dictionary<string, object> { { "task", "explore" } },
                 CancellationToken.None);
 
+            Assert.That(result, Is.Not.Null);
             Assert.That(captured, Is.Not.Null);
             Assert.That(captured.ReasoningEffort, Is.Null);
         }

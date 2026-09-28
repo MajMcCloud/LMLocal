@@ -80,8 +80,11 @@
     <Compile Include="Application\Chat\ContentTextExtractor.cs" />
     <Compile Include="Application\ModelsList\TestConnectionResult.cs" />
     <Compile Include="Application\ModelsList\TestConnectionService.cs" />
+    <Compile Include="Application\SubAgents\ISubAgentsParallelPolicy.cs" />
+    <Compile Include="Application\SubAgents\ISubAgentsParallelRunner.cs" />
     <Compile Include="Application\SubAgents\ISubAgentsService.cs" />
     <Compile Include="Application\SubAgents\SubAgentRunRequest.cs" />
+    <Compile Include="Application\SubAgents\SubAgentsParallelRunResult.cs" />
     <Compile Include="Application\SubAgents\SubAgentsRunResponse.cs" />
     <Compile Include="Application\SubAgents\SubAgentsService.cs" />
     <Compile Include="Application\Tool\IToolExecutionOutcome.cs" />
@@ -109,6 +112,7 @@
     <Compile Include="Core\Exceptions\ApiException.cs" />
     <Compile Include="Core\Models\ApiErrorInfo.cs" />
     <Compile Include="Core\Models\AutocompletionsConfig.cs" />
+    <Compile Include="Core\Models\ChatSessionLog.cs" />
     <Compile Include="Core\Models\CompletionParameters.cs" />
     <Compile Include="Core\Models\GetProvidersResponse.cs" />
     <Compile Include="Core\Models\Instructions\InstructionDefaultTab.cs" />
@@ -168,6 +172,8 @@
     <Compile Include="Infrastructure\Streaming\ActivityReportingStream.cs" />
     <Compile Include="Infrastructure\SubAgents\ISubAgentsCatalog.cs" />
     <Compile Include="Infrastructure\SubAgents\SubAgentsConfigManager.cs" />
+    <Compile Include="Infrastructure\SubAgents\SubAgentsParallelPolicy.cs" />
+    <Compile Include="Infrastructure\SubAgents\SubAgentsParallelRunner.cs" />
     <Compile Include="Infrastructure\SubAgents\SubAgentsToolSource.cs" />
     <Compile Include="Infrastructure\Syntax\ISyntaxChecker.cs" />
     <Compile Include="Infrastructure\Syntax\JsSyntaxChecker.cs" />
@@ -181,6 +187,8 @@
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Projects\SdkProjectDetector.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\SearchResultCache.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ProjectMetadataProvider.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Search\ChatHistoryScorer.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Search\ChatHistorySearchModels.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Search\ContentSearchMatcher.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Search\DeclarationMatcher.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Search\KnowledgeSearchModels.cs" />
@@ -197,6 +205,7 @@
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\GetSymbolInfo.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\InspectType.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Search\KnowledgeScorer.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\SearchChatHistory.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\SearchKnowledge.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\SetFileProjectStatus.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\ReplaceFileContent.cs" />
@@ -419,6 +428,7 @@
     <Compile Include="Infrastructure\WebView\Hosting\WebViewHostObjectSink.cs" />
     <Compile Include="Infrastructure\WebView\Initialization\IWebViewInitializer.cs" />
     <Compile Include="Infrastructure\WebView\Initialization\WebViewInitializer.cs" />
+    <Compile Include="Infrastructure\WebView\Messaging\SerializingMessageSink.cs" />
     <Compile Include="Infrastructure\WebView\Models\ChatSessionsResponse.cs" />
     <Compile Include="Infrastructure\WebView\Models\GetLastChatSessionResponse.cs" />
     <Compile Include="Infrastructure\WebView\Models\McpTestConnectionResponse.cs" />
@@ -437,6 +447,7 @@
     <Compile Include="Infrastructure\WebView\Models\WebView2SessionCompleteMessage.cs" />
     <Compile Include="Infrastructure\WebView\Models\WebView2SnapshotMessage.cs" />
     <Compile Include="Infrastructure\WebView\Models\WebView2ToolCallMessage.cs" />
+    <Compile Include="Infrastructure\WebView\Models\WebView2ToolGroupMessage.cs" />
     <Compile Include="Infrastructure\WebView\Navigation\IWebView2Page.cs" />
     <Compile Include="Infrastructure\WebView\Navigation\IWebViewNavigator.cs" />
     <Compile Include="Infrastructure\WebView\Navigation\WebView2NavigationGuard.cs" />

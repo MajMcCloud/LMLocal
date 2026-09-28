@@ -16,6 +16,9 @@ class StatusComponent {
         this.onClearChat = createCallback();
         this._providerName = null;
         this._currentAppState = null;
+        this._settingsState = null;
+        this._currentInstructionsState = null;
+        this._lastSignature = null;
     }
 
     _getElements() {
@@ -239,6 +242,9 @@ class StatusComponent {
         this.elements = {};
         this._providerName = null;
         this._currentAppState = null;
+        this._settingsState = null;
+        this._currentInstructionsState = null;
+        this._lastSignature = null;
     }
 
     updateAppState(appState, prevAppState) {
@@ -258,38 +264,84 @@ class StatusComponent {
         }
     }
 
-    _updateToolsModeStatus(settingsState, prevSettingsState) {
+    _getSelectedInstruction(instructionsState) {
+        const instructions = instructionsState?.instructions;
+        const selectedTabId = instructionsState?.selectedTabId;
+        if (!Array.isArray(instructions) || !selectedTabId) return null;
+        return instructions.find((tab) => tab && tab.enabled && tab.id == selectedTabId) || null;
+    }
+
+    _instructionSegment() {
+        const tab = this._getSelectedInstruction(this._currentInstructionsState);
+        return tab ? tab.displayName : null;
+    }
+
+    _toolsSegment() {
+        const settings = this._settingsState;
+        if (!settings || !settings.EnableAiTools) return null;
+        return settings.EnableAiWriteTools ? UIText.STATUS_TOOLS_READ_WRITE : UIText.STATUS_TOOLS_READ;
+    }
+
+    _composeTooltip() {
+        const lines = [];
+
+        const tab = this._getSelectedInstruction(this._currentInstructionsState);
+        lines.push(tab
+            ? UIText.STATUS_TOOLTIP_INSTRUCTIONS
+                .replace('{name}', tab.displayName)
+                .replace('{temperature}', tab.temperature)
+            : UIText.STATUS_TOOLTIP_INSTRUCTIONS_DISABLED);
+
+        const tools = this._toolsSegment();
+        if (tools === UIText.STATUS_TOOLS_READ_WRITE) {
+            lines.push(UIText.STATUS_TOOLTIP_TOOLS_READ_WRITE);
+        } else if (tools === UIText.STATUS_TOOLS_READ) {
+            lines.push(UIText.STATUS_TOOLTIP_TOOLS_READ);
+        } else {
+            lines.push(UIText.STATUS_TOOLTIP_TOOLS_DISABLED);
+        }
+
+        lines.push(this._settingsState?.EnableSubAgents
+            ? UIText.STATUS_TOOLTIP_SUBAGENTS_ENABLED
+            : UIText.STATUS_TOOLTIP_SUBAGENTS_DISABLED);
+
+        return lines.join('\n');
+    }
+
+    _renderToolsMode() {
         if (!this.elements.toolsModeStatus) return;
 
-        if (
-            prevSettingsState &&
-            settingsState.EnableAiTools === prevSettingsState.EnableAiTools &&
-            settingsState.EnableAiWriteTools === prevSettingsState.EnableAiWriteTools &&
-            settingsState.EnableSubAgents === prevSettingsState.EnableSubAgents
-        ) {
-            return;
+        const parts = [];
+        const instruction = this._instructionSegment();
+        if (instruction) parts.push(instruction);
+
+        const tools = this._toolsSegment();
+        if (tools) {
+            parts.push(tools);
+            if (this._settingsState && this._settingsState.EnableSubAgents) {
+                parts.push(UIText.STATUS_SUBAGENTS);
+            }
         }
 
-        const mode = settingsState.EnableAiTools
-            ? (settingsState.EnableAiWriteTools ? 'readwrite' : 'readonly')
-            : 'none';
+        const signature = parts.join('\u0000');
+        if (signature === this._lastSignature) return;
+        this._lastSignature = signature;
 
-        const subAgentsSuffix = settingsState.EnableSubAgents ? ' + SubAgents' : '';
-
-        let text = '';
-        if (mode === 'readonly') {
-            text = `Tools: Read${subAgentsSuffix}`;
-        } else if (mode === 'readwrite') {
-            text = `Tools: Read & Write${subAgentsSuffix}`;
-        }
-        this.elements.toolsModeStatus.textContent = text;
+        this.elements.toolsModeStatus.textContent = parts.join(UIText.STATUS_SEGMENT_SEPARATOR);
+        this.elements.toolsModeStatus.title = this._composeTooltip();
     }
 
     updateSettingsState(settingsState, prevSettingsState) {
-        this._updateToolsModeStatus(settingsState, prevSettingsState);
+        this._settingsState = settingsState;
+        this._renderToolsMode();
         if (settingsState.Provider && settingsState.Provider !== prevSettingsState?.Provider && this.elements.connStatus) {
             this.elements.connStatus.title = `Provider type: ${settingsState.Provider}\nBase url: ${settingsState.LmStudioBaseUrl}`;
         }
+    }
+
+    updateInstructionsState(instructionsState, prevInstructionsState) {
+        this._currentInstructionsState = instructionsState;
+        this._renderToolsMode();
     }
 }
 

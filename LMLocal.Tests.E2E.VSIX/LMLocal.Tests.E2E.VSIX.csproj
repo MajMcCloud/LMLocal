@@ -18,4 +18,21 @@
     <PackageReference Include="MSTest.TestFramework" Version="4.1.0" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2120" PrivateAssets="all" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Scratch files created by E2E RunTool tests must never compile into the test assembly. -->
+    <Compile Remove="Scratch\**\*.cs" />
+    <None Remove="Scratch\**" />
+    <None Include="Fixtures\reader-ranges-fixture.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Fixtures\reader-missing-files-fixture.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Fixtures\reader-truth-fixture.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Fixtures\reader-large-fixture.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

@@ -86,6 +86,16 @@ class BridgeMessageDispatcher {
                 this._handler.handleStreamToolEnd(data);
                 break;
 
+            case 'StreamToolGroupStart':
+                this._handler.handleStreamToolGroupStart(data);
+                break;
+            case 'StreamToolGroupProgress':
+                this._handler.handleStreamToolGroupProgress(data);
+                break;
+            case 'StreamToolGroupEnd':
+                this._handler.handleStreamToolGroupEnd(data);
+                break;
+
             case 'CompactionStart':
                 this._handler.handleCompactionStart();
                 break;

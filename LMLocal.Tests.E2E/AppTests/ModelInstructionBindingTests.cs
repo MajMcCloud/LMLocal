@@ -42,6 +42,22 @@ public class ModelInstructionBindingTests : AppTestBase
 
     [Test]
     [Category("ModelInstruction")]
+    public async Task Startup_ModelWithBoundInstruction_StatusBarShowsInstruction()
+    {
+        await GotoAndWaitConnectedAsync();
+
+        // The active model is bound to instruction tab 4 ("Review"); the status bar shows the
+        // effective instruction. Tools are off by default, so only the instruction segment appears.
+        var status = Page.Locator("#tools-mode-status");
+        await Expect(status).ToHaveTextAsync("Review", new() { Timeout = 5000 });
+
+        // The tooltip always exposes the full three-line state.
+        await Expect(status).ToHaveAttributeAsync(
+            "title", "Instructions: Review (t=0.5)\nTools: Disabled\nSubAgents: Disabled");
+    }
+
+    [Test]
+    [Category("ModelInstruction")]
     public async Task ModelsDialog_EditBoundModel_ShowsInstructionInForm()
     {
         await OpenModelsDialogAsync();

@@ -16,6 +16,11 @@ namespace LMLocal.Infrastructure.Persistence
 
     internal class FileLockManager : IFileLockManager
     {
+        /// <summary>
+        /// Process-wide shared instance.
+        /// </summary>
+        public static readonly IFileLockManager Shared = new FileLockManager();
+
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new ConcurrentDictionary<string, SemaphoreSlim>();
 
         public async Task WaitAsync(string absolutePath, CancellationToken cancellationToken = default)

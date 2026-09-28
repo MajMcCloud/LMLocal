@@ -76,7 +76,7 @@ public partial class AiToolsDropdownTests : AppTestBase
 
         // Label updates immediately
         await Expect(Page.Locator("#aiToolsSelectedOption")).ToHaveTextAsync("Read Only");
-        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Tools: Read");
+        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Read");
 
         // Bridge received { "mode": "readonly" }
         var payload = await GetCapturedAiToolsPayloadAsync();
@@ -101,7 +101,7 @@ public partial class AiToolsDropdownTests : AppTestBase
         await Page.Locator("#aiToolsDropdownMenu .dropdown-item", new() { HasText = "Read & Write" }).ClickAsync();
 
         await Expect(Page.Locator("#aiToolsSelectedOption")).ToHaveTextAsync("Read & Write");
-        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Tools: Read & Write");
+        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Read & Write");
 
         var payload = await GetCapturedAiToolsPayloadAsync();
         Assert.That(payload, Is.EqualTo("{\"mode\":\"readwrite\"}"));

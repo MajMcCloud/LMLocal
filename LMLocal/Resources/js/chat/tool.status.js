@@ -62,3 +62,36 @@ export function finishTooling(toolContainer, callId, withError, message) {
         stepSpan.style.opacity = '1';
     }
 }
+
+/**
+ * Renders/updates the "N/M done" header for a parallel SubAgent fan-out group.
+ */
+export function updateToolGroup(toolContainer, groupId, completed, total) {
+    if (!toolContainer || !groupId) return;
+
+    let groupDiv = toolContainer.querySelector(`[data-tool-group-id="${groupId}"]`);
+    if (!groupDiv) {
+        groupDiv = document.createElement('div');
+        groupDiv.className = 'tool-group-status';
+        groupDiv.setAttribute('data-tool-group-id', groupId);
+
+        const header = document.createElement('span');
+        header.className = 'tool-group-status-message';
+        groupDiv.appendChild(header);
+
+        toolContainer.insertBefore(groupDiv, toolContainer.firstChild);
+    }
+
+    const totalCount = typeof total === 'number' ? total : 0;
+    const doneCount = typeof completed === 'number' ? completed : 0;
+    const isComplete = totalCount > 0 && doneCount >= totalCount;
+
+    const header = groupDiv.querySelector('.tool-group-status-message');
+    if (header) {
+        header.textContent = totalCount > 0
+            ? `Parallel agents: ${Math.min(doneCount, totalCount)}/${totalCount} done`
+            : 'Parallel agents';
+    }
+
+    groupDiv.classList.toggle('tool-group-status-completed', isComplete);
+}

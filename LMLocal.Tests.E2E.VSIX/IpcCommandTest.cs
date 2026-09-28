@@ -125,14 +125,16 @@ namespace LMLocal.Tests.E2E.VSIX
                         var obj = JObject.Parse(response);
                         Assert.IsTrue(obj.ContainsKey("file_path"), "Response should contain 'file_path' key");
                         Assert.IsTrue(obj.ContainsKey("content"), "Response should contain 'content' key");
-                        Assert.IsTrue(obj.ContainsKey("start_line"), "Response should contain 'start_line' key");
-                        Assert.IsTrue(obj.ContainsKey("end_line"), "Response should contain 'end_line' key");
+                        Assert.IsFalse(obj.ContainsKey("start_line"), "Response should no longer contain 'start_line' key");
+                        Assert.IsFalse(obj.ContainsKey("end_line"), "Response should no longer contain 'end_line' key");
                         Assert.IsTrue(obj.ContainsKey("has_more_results"), "Response should contain 'has_more_results' key");
                         Assert.IsTrue(obj.ContainsKey("success"), "Response should contain 'success' key");
-                        var content = obj["content"]?.ToString();
-                        Assert.IsFalse(string.IsNullOrEmpty(content), "Expected non-empty content");
-                        Assert.AreEqual(1, (int)obj["start_line"], "start_line should be 1");
-                        Assert.IsGreaterThanOrEqualTo(1, (int)obj["end_line"], "end_line should be >= 1");
+                        var content = obj["content"] as JArray;
+                        Assert.IsNotNull(content, "'content' should be an array of lines");
+                        Assert.IsGreaterThan(0, content.Count, "Expected at least one line of content");
+                        // Each returned line must carry its own 1-based line number, e.g. "1: using System;".
+                        var firstLine = content[0]?.ToString();
+                        Assert.IsTrue(firstLine != null && firstLine.StartsWith("1: ", StringComparison.Ordinal), "First returned line should be prefixed with '1: '");
                     }
                 }
                 finally
