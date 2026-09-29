@@ -396,6 +396,7 @@
     <Compile Include="Infrastructure\Tooling\ToolResultMarkdownFormatter.cs" />
     <Compile Include="Infrastructure\Tooling\ToolRouter.cs" />
     <Compile Include="Infrastructure\Tooling\ToolsConfigManager.cs" />
+    <Compile Include="Infrastructure\VisualStudio\CloseWhileGeneratingGuard.cs" />
     <Compile Include="Infrastructure\VisualStudio\DiffViewer.cs" />
     <Compile Include="Infrastructure\VisualStudio\FileViewer.cs" />
     <Compile Include="Infrastructure\WebView\Controllers\AutocompletionsController.cs" />

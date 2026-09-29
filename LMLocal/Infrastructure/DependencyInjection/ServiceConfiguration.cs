@@ -29,6 +29,7 @@ using LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Js;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Snapshot;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Snapshot.Infrastructure;
+using LMLocal.Infrastructure.VisualStudio;
 using LMLocal.Infrastructure.Tooling.Mcp;
 using LMLocal.Infrastructure.Tooling.Mcp.Abstractions;
 using LMLocal.Infrastructure.WebView;
@@ -100,6 +101,7 @@ namespace LMLocal.Infrastructure.DependencyInjection
             services.AddSingleton<IUiThreadGuard, VsUiThreadGuard>();
             services.AddSingleton<ISearchResultCache, SearchResultCache>();
             services.AddSingleton<IToolFileOpener, ToolFileOpener>();
+            services.AddSingleton<ICloseWhileGeneratingGuard, CloseWhileGeneratingGuard>();
             services.AddSingleton<IAutocompletionsConfigManager, AutocompletionsConfigManager>();
 
             services.AddTransient<ISolutionFileProvider, SolutionFileProvider>();

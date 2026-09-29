@@ -22,6 +22,7 @@ class SettingsStoreClass extends BaseStoreClass {
             CollapseToolCalls: false,
             EnableCodeCollapse: false,
             OpenToolFilesInEditor: false,
+            PreventCloseWhileGenerating: true,
             ShowTokenStats: false
         });
     }

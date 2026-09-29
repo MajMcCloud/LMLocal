@@ -5,6 +5,7 @@ using LMLocal.Commands;
 using LMLocal.Infrastructure.DependencyInjection;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Common;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Snapshot;
+using LMLocal.Infrastructure.VisualStudio;
 using LMLocal.Ipc;
 using Microsoft.VisualStudio.Shell;
 using Task = System.Threading.Tasks.Task;
@@ -67,6 +68,11 @@ namespace LMLocal
 
             var snapshotSolutionEvents = ServiceConfiguration.GetService<ISnapshotSolutionEvents>();
             snapshotSolutionEvents.Initialize();
+
+            // Ask before Visual Studio is closed while an AI request is still running.
+            var closeGuard = ServiceConfiguration.GetService<ICloseWhileGeneratingGuard>();
+            closeGuard.Initialize();
+            DisposalToken.Register(() => closeGuard?.Dispose());
 
             await ShowMainWindow.InitializeAsync(this);
             await MainWindowCommand.InitializeAsync(this);
