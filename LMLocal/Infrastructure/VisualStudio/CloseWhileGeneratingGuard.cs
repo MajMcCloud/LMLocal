@@ -82,10 +82,6 @@ namespace LMLocal.Infrastructure.VisualStudio
         private WndProcDelegate _wndProc;
         private bool _subclassApplied;
 
-        // EventManager.RegisterClassHandler cannot be undone, so the handler is registered at most once and
-        // stays inert after Dispose (it checks _disposed first).
-        private bool _classHandlerRegistered;
-
         // Prevents a second prompt while one is open, and remembers an explicit "exit now".
         private bool _isHandling;
         private bool _exitApproved;
@@ -149,7 +145,6 @@ namespace LMLocal.Infrastructure.VisualStudio
                 System.Windows.FrameworkElement.LoadedEvent,
                 new System.Windows.RoutedEventHandler(OnAnyWindowLoaded),
                 handledEventsToo: true);
-            _classHandlerRegistered = true;
 
             TrySubscribeToWindow(_application.MainWindow);
         }
