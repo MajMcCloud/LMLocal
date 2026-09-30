@@ -1,8 +1,11 @@
-﻿using System;
+using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using LMLocal.Application.Abstractions.Ports;
 using LMLocal.Application.ChatSession;
 using LMLocal.Core.Common;
+using LMLocal.Core.Models;
+using LMLocal.Infrastructure.Settings;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -26,13 +29,19 @@ namespace LMLocal.Infrastructure.VisualStudio
     /// asks the user how to proceed: continue working, cancel the work and stay, or exit immediately.
     /// </summary>
     /// <remarks>
-    /// Two channels are monitored because they cover different ways of closing Visual Studio:
+    /// Three channels are monitored because they cover different ways of closing Visual Studio:
     /// <list type="bullet">
-    /// <item><description><c>WM_CLOSE</c> on the main window handle (close button, Alt+F4).</description></item>
+    /// <item><description><c>WM_CLOSE</c> on the main window HWND (close button, Alt+F4). This is the primary
+    /// channel: Visual Studio closes its frame natively and does not reliably raise the WPF Closing event.</description></item>
+    /// <item><description><c>Window.Closing</c> on the WPF main window (managed close paths such as File - Exit).</description></item>
     /// <item><description><c>WM_QUERYENDSESSION</c> broadcast (logoff / shutdown / "close all windows").</description></item>
     /// </list>
-    /// Both handlers answer synchronously: a running request keeps the UI thread busy, so asynchronous
-    /// event sinks would not be serviced in time.
+    /// The main window HWND is resolved from the real WPF main window (<see cref="System.Windows.Application.MainWindow"/>)
+    /// and never from <c>IVsUIShell.GetDialogOwnerHwnd</c>: during package initialization the latter can return
+    /// the start window, which Visual Studio closes as soon as a solution loads - producing a bogus close
+    /// request long before the user ever tried to exit.
+    /// All handlers answer synchronously because a running request keeps the UI thread busy, so purely
+    /// asynchronous event sinks would not be serviced in time.
     /// </remarks>
     internal sealed class CloseWhileGeneratingGuard : ICloseWhileGeneratingGuard
     {
@@ -62,10 +71,20 @@ namespace LMLocal.Infrastructure.VisualStudio
         private BroadcastMessageEvents _broadcastSink;
         private uint _broadcastCookie;
 
-        private IntPtr _mainWindowHandle = IntPtr.Zero;
-        private WndProcDelegate _wndProc;
+        private System.Windows.Application _application;
+        private System.Windows.Window _mainWindow;
+
+        // Win32 subclassing of the main window's HWND. Visual Studio closes its frame natively via WM_CLOSE,
+        // which does not reliably raise the WPF Closing event on the hosted main window. The handle is
+        // resolved from the real main window (never the start window) and only after that window exists.
+        private IntPtr _subclassHwnd = IntPtr.Zero;
         private IntPtr _originalWndProc = IntPtr.Zero;
-        private bool _subclassingApplied;
+        private WndProcDelegate _wndProc;
+        private bool _subclassApplied;
+
+        // EventManager.RegisterClassHandler cannot be undone, so the handler is registered at most once and
+        // stays inert after Dispose (it checks _disposed first).
+        private bool _classHandlerRegistered;
 
         // Prevents a second prompt while one is open, and remembers an explicit "exit now".
         private bool _isHandling;
@@ -87,19 +106,6 @@ namespace LMLocal.Infrastructure.VisualStudio
             try
             {
                 _shell = Package.GetGlobalService(typeof(SVsShell)) as IVsShell;
-                var uiShell = Package.GetGlobalService(typeof(SVsUIShell)) as IVsUIShell;
-
-                IntPtr hwnd = IntPtr.Zero;
-                if (uiShell != null && ErrorHandler.Succeeded(uiShell.GetDialogOwnerHwnd(out hwnd)))
-                {
-                    _mainWindowHandle = hwnd;
-                }
-
-                if (_mainWindowHandle == IntPtr.Zero)
-                {
-                    InternalLogger.Warn("CloseWhileGeneratingGuard: Main window handle not available, the guard stays inactive.");
-                    return;
-                }
 
                 if (_shell != null)
                 {
@@ -112,13 +118,210 @@ namespace LMLocal.Infrastructure.VisualStudio
                     }
                 }
 
-                SubclassMainWindow();
+                AttachMainWindow();
             }
             catch (Exception ex)
             {
                 InternalLogger.Error("CloseWhileGeneratingGuard: Failed to initialize the close guard.", ex);
             }
         }
+
+        #region Main window subscription (Window.Closing)
+
+        /// <summary>
+        /// Subscribes to the close events of the Visual Studio main window. If no main window exists yet,
+        /// a class handler catches the next window that is loaded and re-checks which one is the main window.
+        /// </summary>
+        private void AttachMainWindow()
+        {
+            _application = System.Windows.Application.Current;
+            if (_application == null)
+            {
+                InternalLogger.Warn("CloseWhileGeneratingGuard: No WPF application instance found; only session-end notifications remain active.");
+                return;
+            }
+
+            // Visual Studio may still show its start window while this package initializes. Watching the
+            // Loaded event of any window lets us move to the real main window once it appears (and its HWND
+            // becomes available for subclassing).
+            System.Windows.EventManager.RegisterClassHandler(
+                typeof(System.Windows.Window),
+                System.Windows.FrameworkElement.LoadedEvent,
+                new System.Windows.RoutedEventHandler(OnAnyWindowLoaded),
+                handledEventsToo: true);
+            _classHandlerRegistered = true;
+
+            TrySubscribeToWindow(_application.MainWindow);
+        }
+
+        private void OnAnyWindowLoaded(object sender, System.Windows.RoutedEventArgs e)
+        {
+            if (_disposed || _application == null) return;
+
+            try
+            {
+                var window = sender as System.Windows.Window;
+                if (window == null) return;
+
+                // Only react to the window that currently is the application main window.
+                if (ReferenceEquals(window, _application.MainWindow))
+                {
+                    TrySubscribeToWindow(window);
+                }
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Error("CloseWhileGeneratingGuard: Failed to subscribe to the main window.", ex);
+            }
+        }
+
+        private bool TrySubscribeToWindow(System.Windows.Window window)
+        {
+            if (window == null) return false;
+
+            if (ReferenceEquals(window, _mainWindow))
+            {
+                // Already subscribed - make sure the HWND subclass is in place (it may have been skipped
+                // earlier because the handle was not created yet).
+                EnsureSubclass(window);
+                return true;
+            }
+
+            UnsubscribeFromWindow();
+
+            _mainWindow = window;
+            _mainWindow.Closing += OnMainWindowClosing;
+            InternalLogger.Info($"CloseWhileGeneratingGuard: Listening for close requests on '{window.GetType().Name}'.");
+
+            EnsureSubclass(window);
+            return true;
+        }
+
+        private void UnsubscribeFromWindow()
+        {
+            if (_mainWindow == null) return;
+
+            try
+            {
+                _mainWindow.Closing -= OnMainWindowClosing;
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Warn($"CloseWhileGeneratingGuard: Failed to detach from the main window: {ex.Message}");
+            }
+            finally
+            {
+                _mainWindow = null;
+            }
+        }
+
+        private void OnMainWindowClosing(object sender, CancelEventArgs e)
+        {
+            // Ignore close events of a window that is no longer the main window (e.g. a start window that
+            // Visual Studio discards while a solution loads).
+            var current = _application != null ? _application.MainWindow : null;
+            if (current != null && !ReferenceEquals(sender, current))
+                return;
+
+            InternalLogger.Info("CloseWhileGeneratingGuard: WPF Window.Closing fired.");
+
+            if (TryVetoClose("Window.Closing"))
+            {
+                e.Cancel = true;
+            }
+        }
+
+        #endregion
+
+        #region Main window subclassing (WM_CLOSE)
+
+        /// <summary>
+        /// Subclasses the HWND of the given window so WM_CLOSE can be intercepted. Safe to call repeatedly;
+        /// does nothing until the window handle exists.
+        /// </summary>
+        private void EnsureSubclass(System.Windows.Window window)
+        {
+            if (_subclassApplied || window == null) return;
+
+            try
+            {
+                IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                if (hwnd == IntPtr.Zero)
+                {
+                    // Handle not created yet; retried on the next Loaded event.
+                    return;
+                }
+
+                _wndProc = new WndProcDelegate(MainWindowProc);
+                IntPtr newProc = Marshal.GetFunctionPointerForDelegate(_wndProc);
+
+                _originalWndProc = Is64BitProcess
+                    ? SetWindowLongPtr(hwnd, GWLP_WNDPROC, newProc)
+                    : SetWindowLong32(hwnd, GWLP_WNDPROC, newProc);
+
+                if (_originalWndProc == IntPtr.Zero)
+                {
+                    InternalLogger.Warn("CloseWhileGeneratingGuard: SetWindowLong failed; WM_CLOSE interception is disabled.");
+                    _wndProc = null;
+                    return;
+                }
+
+                // Keep the delegate alive for as long as the window procedure is subclassed.
+                GC.KeepAlive(_wndProc);
+
+                _subclassHwnd = hwnd;
+                _subclassApplied = true;
+
+                InternalLogger.Info($"CloseWhileGeneratingGuard: Subclassed main window HWND 0x{hwnd.ToInt64():X}.");
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Error("CloseWhileGeneratingGuard: Failed to subclass the Visual Studio main window.", ex);
+                _wndProc = null;
+                _subclassApplied = false;
+            }
+        }
+
+        private void RestoreSubclass()
+        {
+            if (!_subclassApplied || _subclassHwnd == IntPtr.Zero || _originalWndProc == IntPtr.Zero)
+                return;
+
+            try
+            {
+                if (Is64BitProcess)
+                    SetWindowLongPtr(_subclassHwnd, GWLP_WNDPROC, _originalWndProc);
+                else
+                    SetWindowLong32(_subclassHwnd, GWLP_WNDPROC, _originalWndProc);
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Warn($"CloseWhileGeneratingGuard: Failed to restore the main window procedure: {ex.Message}");
+            }
+            finally
+            {
+                _subclassApplied = false;
+                _originalWndProc = IntPtr.Zero;
+                _subclassHwnd = IntPtr.Zero;
+                _wndProc = null;
+            }
+        }
+
+        private IntPtr MainWindowProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
+        {
+            if (msg == WM_CLOSE && TryVetoClose("WM_CLOSE"))
+            {
+                // Swallow the close request: do not forward it to the original window procedure.
+                return IntPtr.Zero;
+            }
+
+            if (_originalWndProc == IntPtr.Zero)
+                return IntPtr.Zero;
+
+            return CallWindowProc(_originalWndProc, hWnd, msg, wParam, lParam);
+        }
+
+        #endregion
 
         /// <summary>
         /// Handles an incoming close request.
@@ -133,14 +336,21 @@ namespace LMLocal.Infrastructure.VisualStudio
             if (_isHandling)
                 return true;
 
-            if (!IsPreventionEnabled() || !IsWorkRunning())
+            // Cheap check first: without running work nothing has to be protected, and the settings are
+            // never touched (they are loaded lazily).
+            if (!IsWorkRunning())
+                return false;
+
+            InternalLogger.Info($"CloseWhileGeneratingGuard: '{source}' received while work is running.");
+
+            if (!IsPreventionEnabled())
                 return false;
 
             _isHandling = true;
             try
             {
                 CloseChoice choice = PromptUser();
-                InternalLogger.Info($"CloseWhileGeneratingGuard: '{source}' intercepted, user chose '{choice}'.");
+                InternalLogger.Info($"CloseWhileGeneratingGuard: User chose '{choice}'.");
 
                 switch (choice)
                 {
@@ -171,9 +381,21 @@ namespace LMLocal.Infrastructure.VisualStudio
 
         private bool IsPreventionEnabled()
         {
+            if (_settingsManager == null)
+                return true;
+
+            // Preferred path: exception-free read. Settings are loaded lazily, so they may not be
+            // available yet (e.g. when VS is closed before the chat window was ever shown).
+            var manager = _settingsManager as SettingsManager;
+            if (manager != null)
+            {
+                AppSettings cached = manager.TryGetCurrent();
+                return cached?.PreventCloseWhileGenerating ?? true;
+            }
+
             try
             {
-                return _settingsManager?.Current?.PreventCloseWhileGenerating ?? true;
+                return _settingsManager.Current?.PreventCloseWhileGenerating ?? true;
             }
             catch (InvalidOperationException)
             {
@@ -214,19 +436,51 @@ namespace LMLocal.Infrastructure.VisualStudio
 
         private CloseChoice PromptUser()
         {
-            // Both entry points (window procedure and broadcast sink) run on the UI thread, so the modal
-            // dialog can be shown directly. A nested modal loop is safe here: it pumps messages while the
-            // AI request continues in the background.
+            // All entry points (window procedure, WPF Closing event and broadcast sink) run on the UI thread,
+            // so the modal dialog can be shown directly. A nested modal loop is safe here: it pumps messages
+            // while the AI request continues in the background.
             ThreadHelper.ThrowIfNotOnUIThread();
             return ShowClosePrompt();
         }
 
         private CloseChoice ShowClosePrompt()
         {
-            if (TryShowTaskDialog(_mainWindowHandle, out CloseChoice choice))
+            IntPtr owner = GetDialogOwner();
+
+            if (TryShowTaskDialog(owner, out CloseChoice choice))
                 return choice;
 
-            return ShowFallbackMessageBox(_mainWindowHandle);
+            InternalLogger.Warn("CloseWhileGeneratingGuard: TaskDialogIndirect failed, falling back to MessageBox.");
+            return ShowFallbackMessageBox(owner);
+        }
+
+        /// <summary>
+        /// Resolves the dialog owner at the moment the prompt is shown. The handle is read live so that a
+        /// start-window handle can never be cached and reused later.
+        /// </summary>
+        private IntPtr GetDialogOwner()
+        {
+            try
+            {
+                System.Windows.Window window = _mainWindow ?? (_application != null ? _application.MainWindow : null);
+                if (window != null)
+                {
+                    IntPtr handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                    if (handle != IntPtr.Zero)
+                        return handle;
+                }
+
+                var uiShell = Package.GetGlobalService(typeof(SVsUIShell)) as IVsUIShell;
+                IntPtr hwnd;
+                if (uiShell != null && ErrorHandler.Succeeded(uiShell.GetDialogOwnerHwnd(out hwnd)))
+                    return hwnd;
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Warn($"CloseWhileGeneratingGuard: Could not resolve the dialog owner: {ex.Message}");
+            }
+
+            return IntPtr.Zero;
         }
 
         private static bool TryShowTaskDialog(IntPtr owner, out CloseChoice choice)
@@ -325,90 +579,6 @@ namespace LMLocal.Infrastructure.VisualStudio
             }
         }
 
-        #region Main window subclassing (WM_CLOSE)
-
-        private void SubclassMainWindow()
-        {
-            if (_mainWindowHandle == IntPtr.Zero || _subclassingApplied)
-                return;
-
-            try
-            {
-                _wndProc = new WndProcDelegate(MainWindowProc);
-                IntPtr newProc = Marshal.GetFunctionPointerForDelegate(_wndProc);
-
-                _originalWndProc = Is64BitProcess
-                    ? SetWindowLongPtr(_mainWindowHandle, GWLP_WNDPROC, newProc)
-                    : SetWindowLong32(_mainWindowHandle, GWLP_WNDPROC, newProc);
-
-                if (_originalWndProc == IntPtr.Zero)
-                {
-                    InternalLogger.Warn("CloseWhileGeneratingGuard: SetWindowLong failed, WM_CLOSE interception is disabled.");
-                    _wndProc = null;
-                    return;
-                }
-
-                // Keep the delegate alive for as long as the window procedure is subclassed.
-                GC.KeepAlive(_wndProc);
-                _subclassingApplied = true;
-            }
-            catch (Exception ex)
-            {
-                InternalLogger.Error("CloseWhileGeneratingGuard: Failed to subclass the Visual Studio main window.", ex);
-                _wndProc = null;
-                _subclassingApplied = false;
-            }
-        }
-
-        private void RestoreMainWindow()
-        {
-            if (!_subclassingApplied || _mainWindowHandle == IntPtr.Zero || _originalWndProc == IntPtr.Zero)
-                return;
-
-            try
-            {
-                if (Is64BitProcess)
-                    SetWindowLongPtr(_mainWindowHandle, GWLP_WNDPROC, _originalWndProc);
-                else
-                    SetWindowLong32(_mainWindowHandle, GWLP_WNDPROC, _originalWndProc);
-            }
-            catch (Exception ex)
-            {
-                InternalLogger.Warn($"CloseWhileGeneratingGuard: Failed to restore the main window procedure: {ex.Message}");
-            }
-            finally
-            {
-                _subclassingApplied = false;
-                _originalWndProc = IntPtr.Zero;
-                _wndProc = null;
-            }
-        }
-
-        private IntPtr MainWindowProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
-        {
-            if (_originalWndProc == IntPtr.Zero)
-                return CallWindowProcFallback(hWnd, msg, wParam, lParam);
-
-            if (msg == WM_CLOSE && TryVetoClose("WM_CLOSE"))
-                return IntPtr.Zero;
-
-            return CallWindowProc(_originalWndProc, hWnd, msg, wParam, lParam);
-        }
-
-        private static IntPtr CallWindowProcFallback(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
-        {
-            try
-            {
-                return DefWindowProc(hWnd, msg, wParam, lParam);
-            }
-            catch
-            {
-                return IntPtr.Zero;
-            }
-        }
-
-        #endregion
-
         #region Broadcast messages (WM_QUERYENDSESSION)
 
         private int OnBroadcastMessage(int message, IntPtr wParam, IntPtr lParam)
@@ -444,6 +614,12 @@ namespace LMLocal.Infrastructure.VisualStudio
             if (_disposed) return;
             _disposed = true;
 
+            RestoreSubclass();
+            UnsubscribeFromWindow();
+
+            // The class handler itself cannot be unregistered; _disposed keeps it inert.
+            _application = null;
+
             try
             {
                 if (_shell != null && _broadcastCookie != 0)
@@ -461,8 +637,6 @@ namespace LMLocal.Infrastructure.VisualStudio
                 _broadcastSink = null;
                 _shell = null;
             }
-
-            RestoreMainWindow();
         }
 
         private enum CloseChoice
@@ -490,9 +664,6 @@ namespace LMLocal.Infrastructure.VisualStudio
 
         [DllImport("user32.dll")]
         private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr DefWindowProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
