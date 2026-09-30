@@ -72,7 +72,7 @@ namespace LMLocal.Infrastructure.VisualStudio
         private bool _exitApproved;
         private bool _disposed;
 
-        internal CloseWhileGeneratingGuard(ISessionManager sessionManager, ISettingsManager settingsManager)
+        public CloseWhileGeneratingGuard(ISessionManager sessionManager, ISettingsManager settingsManager)
         {
             _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
