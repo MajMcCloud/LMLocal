@@ -48,12 +48,7 @@ namespace LMLocal.Infrastructure.VisualStudio
         private const int WM_CLOSE = 0x0010;
         private const int WM_QUERYENDSESSION = 0x0011;
 
-        // Custom task dialog button ids.
-        private const int ButtonContinueWork = 100;
-        private const int ButtonCancelAndStay = 101;
-        private const int ButtonCancelAndExit = 102;
-
-        // Fallback message box constants / results.
+        // Last-resort message box constants / results (only used if the WPF dialog cannot be shown).
         private const uint MB_YESNOCANCEL = 0x00000003;
         private const uint MB_ICONWARNING = 0x00000030;
         private const int IDYES = 6;
@@ -63,6 +58,14 @@ namespace LMLocal.Infrastructure.VisualStudio
         private const string DialogTitle = "LM Local";
         private const string MainInstruction = "An AI request is still running.";
         private const string ContentText = "Closing Visual Studio now would cancel the current work.\r\nWhat would you like to do?";
+
+        // Button captions. The "&" marks the access key (Alt+letter).
+        private const string CaptionContinueWork = "&Continue work";
+        private const string CaptionCancelAndStay = "Cancel work in progress & stay";
+        private const string CaptionCancelAndExit = "Cancel & exit now";
+
+        // Segoe MDL2 Assets glyph for a warning icon (present on Windows 10/11).
+        private const string WarningGlyph = "\uE7BA";
 
         private readonly ISessionManager _sessionManager;
         private readonly ISettingsManager _settingsManager;
@@ -435,22 +438,151 @@ namespace LMLocal.Infrastructure.VisualStudio
             // so the modal dialog can be shown directly. A nested modal loop is safe here: it pumps messages
             // while the AI request continues in the background.
             ThreadHelper.ThrowIfNotOnUIThread();
-            return ShowClosePrompt();
-        }
 
-        private CloseChoice ShowClosePrompt()
-        {
-            IntPtr owner = GetDialogOwner();
+            System.Windows.Window owner = _mainWindow ?? (_application != null ? _application.MainWindow : null);
 
-            if (TryShowTaskDialog(owner, out CloseChoice choice))
-                return choice;
+            // Preferred path: a styled WPF dialog. The native TaskDialogIndirect is intentionally not used -
+            // inside the Visual Studio host it fails with E_INVALIDARG ("class not registered") because no
+            // Comctl32 v6 activation context applies to our call. A WPF dialog renders reliably and matches
+            // the VS look.
+            try
+            {
+                CloseChoice? result = ShowWpfCloseDialog(owner);
+                if (result.HasValue)
+                    return result.Value;
 
-            InternalLogger.Warn("CloseWhileGeneratingGuard: TaskDialogIndirect failed, falling back to MessageBox.");
-            return ShowFallbackMessageBox(owner);
+                InternalLogger.Warn("CloseWhileGeneratingGuard: WPF close dialog could not be shown, falling back to MessageBox.");
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Error("CloseWhileGeneratingGuard: Showing the WPF close dialog threw, falling back to MessageBox.", ex);
+            }
+
+            return ShowFallbackMessageBox(GetDialogOwner());
         }
 
         /// <summary>
-        /// Resolves the dialog owner at the moment the prompt is shown. The handle is read live so that a
+        /// Builds and shows a modal task-dialog-style prompt in WPF. Returns the user's choice, or null when
+        /// no window could be shown (caller should fall back to a message box).
+        /// </summary>
+        private CloseChoice? ShowWpfCloseDialog(System.Windows.Window owner)
+        {
+            var dialog = new System.Windows.Window
+            {
+                Title = DialogTitle,
+                WindowStyle = System.Windows.WindowStyle.SingleBorderWindow,
+                ResizeMode = System.Windows.ResizeMode.NoResize,
+                SizeToContent = System.Windows.SizeToContent.WidthAndHeight,
+                ShowInTaskbar = false,
+                WindowStartupLocation = owner != null
+                    ? System.Windows.WindowStartupLocation.CenterOwner
+                    : System.Windows.WindowStartupLocation.CenterScreen,
+                Owner = owner,
+                MinWidth = 420,
+                MaxWidth = 520,
+                Background = System.Windows.SystemColors.WindowBrush
+            };
+
+            CloseChoice? choice = null;
+
+            // Root grid: content row on top, button row at the bottom.
+            var root = new System.Windows.Controls.Grid { Margin = new System.Windows.Thickness(20) };
+            root.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+            root.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+
+            // Content: warning glyph + texts.
+            var contentPanel = new System.Windows.Controls.StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal
+            };
+
+            var icon = new System.Windows.Controls.TextBlock
+            {
+                Text = WarningGlyph,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                FontSize = 34,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xCC, 0x8A, 0x00)),
+                VerticalAlignment = System.Windows.VerticalAlignment.Top,
+                Margin = new System.Windows.Thickness(0, 2, 16, 0)
+            };
+            contentPanel.Children.Add(icon);
+
+            var textPanel = new System.Windows.Controls.StackPanel
+            {
+                VerticalAlignment = System.Windows.VerticalAlignment.Center
+            };
+            textPanel.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = MainInstruction,
+                FontSize = 15,
+                FontWeight = System.Windows.FontWeights.SemiBold,
+                TextWrapping = System.Windows.TextWrapping.Wrap,
+                Margin = new System.Windows.Thickness(0, 0, 0, 8)
+            });
+            textPanel.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = ContentText,
+                FontSize = 12,
+                TextWrapping = System.Windows.TextWrapping.Wrap,
+                Foreground = System.Windows.SystemColors.ControlTextBrush
+            });
+
+            contentPanel.Children.Add(textPanel);
+            System.Windows.Controls.Grid.SetRow(contentPanel, 0);
+            root.Children.Add(contentPanel);
+
+            // Buttons: right aligned. "Continue work" is the default (Enter / Esc keep working).
+            var buttonPanel = new System.Windows.Controls.StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                Margin = new System.Windows.Thickness(0, 24, 0, 0)
+            };
+
+            buttonPanel.Children.Add(CreateDialogButton(CaptionContinueWork, true, () => choice = CloseChoice.ContinueWork));
+            buttonPanel.Children.Add(CreateDialogButton(CaptionCancelAndStay, false, () => choice = CloseChoice.CancelWorkAndStay));
+            buttonPanel.Children.Add(CreateDialogButton(CaptionCancelAndExit, false, () => choice = CloseChoice.CancelAndExit));
+
+            System.Windows.Controls.Grid.SetRow(buttonPanel, 1);
+            root.Children.Add(buttonPanel);
+
+            dialog.Content = root;
+
+            bool? shown = dialog.ShowDialog();
+            if (shown != true && !choice.HasValue)
+            {
+                // Closed via the window X without a button -> treat as "continue working".
+                return CloseChoice.ContinueWork;
+            }
+
+            return choice ?? CloseChoice.ContinueWork;
+        }
+
+        private static System.Windows.Controls.Button CreateDialogButton(string caption, bool isDefault, Action onClick)
+        {
+            var button = new System.Windows.Controls.Button
+            {
+                Content = caption,
+                MinWidth = 110,
+                Height = 26,
+                Margin = new System.Windows.Thickness(8, 0, 0, 0),
+                Padding = new System.Windows.Thickness(10, 2, 10, 2),
+                IsDefault = isDefault
+            };
+
+            button.Click += (s, e) =>
+            {
+                onClick();
+                var window = System.Windows.Window.GetWindow(button);
+                if (window != null)
+                    window.DialogResult = true;
+            };
+
+            return button;
+        }
+
+        /// <summary>
+        /// Resolves the dialog owner HWND at the moment the prompt is shown. The handle is read live so that a
         /// start-window handle can never be cached and reused later.
         /// </summary>
         private IntPtr GetDialogOwner()
@@ -478,81 +610,6 @@ namespace LMLocal.Infrastructure.VisualStudio
             return IntPtr.Zero;
         }
 
-        private static bool TryShowTaskDialog(IntPtr owner, out CloseChoice choice)
-        {
-            choice = CloseChoice.ContinueWork;
-
-            IntPtr buttonsPtr = IntPtr.Zero;
-            int hr;
-            int button;
-            int radioButton;
-            bool verificationChecked;
-
-            try
-            {
-                TASKDIALOG_BUTTON[] buttons =
-                {
-                    new TASKDIALOG_BUTTON(ButtonContinueWork, "Continue work"),
-                    new TASKDIALOG_BUTTON(ButtonCancelAndStay, "Cancel work in progress & stay"),
-                    new TASKDIALOG_BUTTON(ButtonCancelAndExit, "Cancel & exit now")
-                };
-
-                int buttonSize = Marshal.SizeOf(typeof(TASKDIALOG_BUTTON));
-                buttonsPtr = Marshal.AllocHGlobal(buttonSize * buttons.Length);
-
-                for (int i = 0; i < buttons.Length; i++)
-                {
-                    Marshal.StructureToPtr(buttons[i], IntPtr.Add(buttonsPtr, buttonSize * i), false);
-                }
-
-                TASKDIALOGCONFIG config = new TASKDIALOGCONFIG();
-                config.cbSize = (uint)Marshal.SizeOf(typeof(TASKDIALOGCONFIG));
-                config.hwndParent = owner;
-                config.hInstance = IntPtr.Zero;
-                config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
-                config.dwCommonButtons = 0;
-                config.pszWindowTitle = DialogTitle;
-                config.hMainIcon = TD_WARNING_ICON;
-                config.pszMainInstruction = MainInstruction;
-                config.pszContent = ContentText;
-                config.cButtons = (uint)buttons.Length;
-                config.pButtons = buttonsPtr;
-                config.nDefaultButton = ButtonContinueWork;
-                config.cRadioButtons = 0;
-                config.pRadioButtons = IntPtr.Zero;
-                config.nDefaultRadioButton = 0;
-                config.pszVerificationFlagText = null;
-                config.dwVerificationFlagState = 0;
-                config.nDefaultVerificationFlag = 0;
-
-                hr = TaskDialogIndirect(ref config, out button, out radioButton, out verificationChecked);
-            }
-            finally
-            {
-                if (buttonsPtr != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(buttonsPtr);
-                }
-            }
-
-            if (hr != 0)
-                return false;
-
-            switch (button)
-            {
-                case ButtonCancelAndExit:
-                    choice = CloseChoice.CancelAndExit;
-                    return true;
-                case ButtonCancelAndStay:
-                    choice = CloseChoice.CancelWorkAndStay;
-                    return true;
-                default:
-                    // ButtonContinueWork, IDCANCEL (Esc / X) or anything unexpected.
-                    choice = CloseChoice.ContinueWork;
-                    return true;
-            }
-        }
-
         private static CloseChoice ShowFallbackMessageBox(IntPtr owner)
         {
             string text = MainInstruction + "\r\n\r\n" +
@@ -568,6 +625,7 @@ namespace LMLocal.Infrastructure.VisualStudio
                     return CloseChoice.CancelAndExit;
                 case IDCANCEL:
                     return CloseChoice.CancelWorkAndStay;
+                case IDYES:
                 default:
                     // IDYES or unexpected result -> stay safe and keep working.
                     return CloseChoice.ContinueWork;
@@ -662,64 +720,6 @@ namespace LMLocal.Infrastructure.VisualStudio
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
-
-        #endregion
-
-        #region TaskDialog interop
-
-        private const uint TDF_ALLOW_DIALOG_CANCELLATION = 0x0008;
-        private const uint TDF_USE_COMMAND_LINKS = 0x0010;
-
-        // TD_WARNING_ICON == MAKEINTRESOURCEW(-2).
-        private static readonly IntPtr TD_WARNING_ICON = new IntPtr(-2);
-
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        private struct TASKDIALOG_BUTTON
-        {
-            public int nButtonID;
-            [MarshalAs(UnmanagedType.LPWStr)]
-            public string pszButtonText;
-
-            public TASKDIALOG_BUTTON(int id, string text)
-            {
-                nButtonID = id;
-                pszButtonText = text;
-            }
-        }
-
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        private struct TASKDIALOGCONFIG
-        {
-            public uint cbSize;
-            public IntPtr hwndParent;
-            public IntPtr hInstance;
-            public uint dwFlags;
-            public uint dwCommonButtons;
-            [MarshalAs(UnmanagedType.LPWStr)]
-            public string pszWindowTitle;
-            public IntPtr hMainIcon;
-            [MarshalAs(UnmanagedType.LPWStr)]
-            public string pszMainInstruction;
-            [MarshalAs(UnmanagedType.LPWStr)]
-            public string pszContent;
-            public uint cButtons;
-            public IntPtr pButtons;
-            public int nDefaultButton;
-            public uint cRadioButtons;
-            public IntPtr pRadioButtons;
-            public int nDefaultRadioButton;
-            [MarshalAs(UnmanagedType.LPWStr)]
-            public string pszVerificationFlagText;
-            public uint dwVerificationFlagState;
-            public uint nDefaultVerificationFlag;
-        }
-
-        [DllImport("comctl32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern int TaskDialogIndirect(
-            ref TASKDIALOGCONFIG pTaskConfig,
-            out int pnButton,
-            out int pnRadioButton,
-            [MarshalAs(UnmanagedType.Bool)] out bool pfVerificationFlagChecked);
 
         #endregion
     }
