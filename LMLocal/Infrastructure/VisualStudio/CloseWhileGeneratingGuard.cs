@@ -59,8 +59,8 @@ namespace LMLocal.Infrastructure.VisualStudio
         private const string MainInstruction = "An AI request is still running.";
         private const string ContentText = "Closing Visual Studio now would cancel the current work.\r\nWhat would you like to do?";
 
-        // Button captions. The "&" marks the access key (Alt+letter).
-        private const string CaptionContinueWork = "&Continue work";
+        // Button captions. WPF uses "_" (not "&") as the access key marker, so plain text is shown verbatim.
+        private const string CaptionContinueWork = "Continue work";
         private const string CaptionCancelAndStay = "Cancel work in progress & stay";
         private const string CaptionCancelAndExit = "Cancel & exit now";
 
@@ -558,6 +558,11 @@ namespace LMLocal.Infrastructure.VisualStudio
             return choice ?? CloseChoice.ContinueWork;
         }
 
+        // Accent colors for the default button: a calm blue that stands out without shouting.
+        private static readonly System.Windows.Media.Brush AccentBrush = CreateFrozenBrush(0x2B, 0x6C, 0xB0);
+        private static readonly System.Windows.Media.Brush AccentHoverBrush = CreateFrozenBrush(0x3A, 0x7D, 0xC4);
+        private static readonly System.Windows.Media.Brush AccentPressedBrush = CreateFrozenBrush(0x1F, 0x5A, 0x96);
+
         private static System.Windows.Controls.Button CreateDialogButton(string caption, bool isDefault, Action onClick)
         {
             var button = new System.Windows.Controls.Button
@@ -570,6 +575,11 @@ namespace LMLocal.Infrastructure.VisualStudio
                 IsDefault = isDefault
             };
 
+            if (isDefault)
+            {
+                TryApplyAccentStyle(button);
+            }
+
             button.Click += (s, e) =>
             {
                 onClick();
@@ -579,6 +589,60 @@ namespace LMLocal.Infrastructure.VisualStudio
             };
 
             return button;
+        }
+
+        /// <summary>
+        /// Gives the default button a flat accent look with white text. Failures are swallowed on purpose:
+        /// the button then simply keeps the standard theme appearance instead of breaking the whole dialog.
+        /// </summary>
+        private static void TryApplyAccentStyle(System.Windows.Controls.Button button)
+        {
+            try
+            {
+                var border = new System.Windows.FrameworkElementFactory(typeof(System.Windows.Controls.Border));
+                border.Name = "AccentBorder";
+                border.SetValue(System.Windows.Controls.Border.BackgroundProperty, AccentBrush);
+                border.SetValue(System.Windows.Controls.Border.BorderBrushProperty, AccentBrush);
+                border.SetValue(System.Windows.Controls.Border.BorderThicknessProperty, new System.Windows.Thickness(1));
+                border.SetValue(System.Windows.Controls.Border.CornerRadiusProperty, new System.Windows.CornerRadius(3));
+                border.SetValue(System.Windows.Controls.Border.PaddingProperty, new System.Windows.Thickness(10, 3, 10, 3));
+
+                var content = new System.Windows.FrameworkElementFactory(typeof(System.Windows.Controls.ContentPresenter));
+                content.SetValue(System.Windows.Controls.ContentPresenter.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Center);
+                content.SetValue(System.Windows.Controls.ContentPresenter.VerticalAlignmentProperty, System.Windows.VerticalAlignment.Center);
+                border.AppendChild(content);
+
+                var template = new System.Windows.Controls.ControlTemplate(typeof(System.Windows.Controls.Button))
+                {
+                    VisualTree = border
+                };
+
+                template.Triggers.Add(CreateBorderTrigger(System.Windows.UIElement.IsMouseOverProperty, AccentHoverBrush));
+                template.Triggers.Add(CreateBorderTrigger(System.Windows.Controls.Primitives.ButtonBase.IsPressedProperty, AccentPressedBrush));
+
+                button.Template = template;
+                button.Foreground = System.Windows.Media.Brushes.White;
+                button.FontWeight = System.Windows.FontWeights.SemiBold;
+            }
+            catch (Exception ex)
+            {
+                InternalLogger.Warn($"CloseWhileGeneratingGuard: Could not apply the accent style to the default button: {ex.Message}");
+            }
+        }
+
+        private static System.Windows.Trigger CreateBorderTrigger(System.Windows.DependencyProperty property, System.Windows.Media.Brush brush)
+        {
+            var trigger = new System.Windows.Trigger { Property = property, Value = true };
+            trigger.Setters.Add(new System.Windows.Setter(System.Windows.Controls.Border.BackgroundProperty, brush, "AccentBorder"));
+            trigger.Setters.Add(new System.Windows.Setter(System.Windows.Controls.Border.BorderBrushProperty, brush, "AccentBorder"));
+            return trigger;
+        }
+
+        private static System.Windows.Media.Brush CreateFrozenBrush(byte r, byte g, byte b)
+        {
+            var brush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
+            brush.Freeze();
+            return brush;
         }
 
         /// <summary>
