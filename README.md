@@ -309,6 +309,13 @@ The built‑in tools let the AI read, edit, build, and test your code. You contr
 **In the Built‑in Tools… dialog (list of built‑in tools):**  
 Open this from the extension's main menu. You’ll see all built‑in tools (for example, `delete_file`, `replace_file_content`). Each tool can be enabled or disabled individually. Even if the global write/modify checkbox is on, you can still turn off specific tools like `delete_file`. Use “Enable All” or “Disable All” to change many at once, then click Save.
 
+### Open edited files in editor (Beta)
+
+**Settings ? Open edited files in editor (Beta)** � disabled by default. When enabled, Visual Studio activates the file that a tool has just created or modified, so you can review the result immediately.
+
+> **Scope (Beta)**
+> This applies to **built-in LM Local tools only**. Files written by **MCP servers** or by **subagents** are **not** opened automatically.
+
 <a id="content--list-of-builtin-tools"></a>
 ### List of built‑in tools
 
