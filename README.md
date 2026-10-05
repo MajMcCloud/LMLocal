@@ -171,6 +171,7 @@ To use LM Local, you need:
 - 🖼️ **Image Attachments** – Paste (`Ctrl+V`) or drag-and-drop images into the chat input for vision-capable models (JPEG/PNG, up to 3 per message, ~4 MB each). Images are **not** compressed and are **not** saved to history.
 - ↕️ **Resizable Panels** – Drag the grip above the input or above the Changes panel to adjust their height.
 - 📜 **Chat History Dialog** – Browse and load past conversations from history logs.
+- 🛡️ **Protect Running AI Requests (Beta)** - Prevents accidental loss of work: if you close Visual Studio (close button or Alt+F4) or end your Windows session while an AI request is still running, a confirmation dialog offers to **continue working**, **cancel the request and stay open**, or **exit now**. Closing the dialog itself keeps Visual Studio open. Can be turned off in Settings under **Protect running AI requests**.
 
 ### Context & Solution Awareness
 - 🛠️ **Advanced AI Tool Integration** – Allows the AI to analyze your open solution, read file contents, and execute actions like building the solution, formatting documents, or running unit tests.
