@@ -132,13 +132,28 @@ class ChatController {
     };
 
     _renderMessageFlow(state, prev = {}) {
-        if (state.status === prev.status &&
-            state.accumulatedText === prev.accumulatedText &&
-            state.accumulatedThoughtText === prev.accumulatedThoughtText &&
-            state.roundNumber === prev.roundNumber &&
-            state.toolMessage === prev.toolMessage &&
-            state.toolStep === prev.toolStep) {
+        const groupChanged =
+            state.toolGroupId !== prev.toolGroupId ||
+            state.toolGroupCompleted !== prev.toolGroupCompleted;
 
+        const statusChanged = state.status !== prev.status;
+
+        const hasRenderableChange =
+            state.accumulatedText !== prev.accumulatedText ||
+            state.accumulatedThoughtText !== prev.accumulatedThoughtText ||
+            state.roundNumber !== prev.roundNumber ||
+            state.toolMessage !== prev.toolMessage ||
+            state.toolStep !== prev.toolStep;
+
+        if (!groupChanged && !statusChanged && !hasRenderableChange) {
+            return;
+        }
+
+        if (groupChanged && this.currentAi) {
+            this.currentAi.updateToolGroup(state.toolGroupId, state.toolGroupCompleted, state.toolGroupTotal);
+        }
+
+        if (!statusChanged && !hasRenderableChange) {
             return;
         }
 

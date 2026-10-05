@@ -55,6 +55,10 @@ namespace LMLocal.Tests.Unit
             });
         }
 
+#if DEBUG
+        // InternalLogger's members are [Conditional("DEBUG")]: the call sites below are emitted only when the
+        // calling assembly (this test project) is compiled with DEBUG. In a Release build they are removed by the
+        // compiler, so delegation cannot be observed. The whole test is therefore Debug-only by construction.
         [Test]
         public void SetLogger_DelegatesCalls_ToProvidedLogger()
         {
@@ -66,12 +70,12 @@ namespace LMLocal.Tests.Unit
             InternalLogger.Error("err-msg", null);
             InternalLogger.Debug("dbg-msg");
 
-            // Verify that provided logger received calls. In Debug build Conditional methods are active.
             mock.Verify(m => m.Info("info-msg"), Times.Once);
             mock.Verify(m => m.Warn("warn-msg"), Times.Once);
             mock.Verify(m => m.Error("err-msg", null), Times.Once);
             mock.Verify(m => m.Debug("dbg-msg"), Times.Once);
         }
+#endif
 
         private class ThrowingLogger : IInternalLogger
         {

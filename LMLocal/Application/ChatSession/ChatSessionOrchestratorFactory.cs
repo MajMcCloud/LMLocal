@@ -1,6 +1,7 @@
 using System;
 using LMLocal.Application.Chat;
 using LMLocal.Application.ChatSessionStream;
+using LMLocal.Application.SubAgents;
 using LMLocal.Application.Tool;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Snapshot;
 
@@ -21,24 +22,37 @@ namespace LMLocal.Application.ChatSession
         private readonly IHistoryCompactor _compactor;
         private readonly ISnapshotManager _snapshotManager;
         private readonly IToolCallLoopDetector _loopDetector;
+        private readonly ISubAgentsParallelPolicy _parallelPolicy;
+        private readonly ISubAgentsParallelRunner _parallelRunner;
 
         public ChatSessionOrchestratorFactory(
             IChatStreamService chatService,
             IToolExecutionManager toolManager,
             IHistoryCompactor compactor,
             ISnapshotManager snapshotManager,
-            IToolCallLoopDetector loopDetector)
+            IToolCallLoopDetector loopDetector,
+            ISubAgentsParallelPolicy parallelPolicy,
+            ISubAgentsParallelRunner parallelRunner)
         {
             _chatService = chatService ?? throw new ArgumentNullException(nameof(chatService));
             _toolManager = toolManager ?? throw new ArgumentNullException(nameof(toolManager));
             _compactor = compactor ?? throw new ArgumentNullException(nameof(compactor));
             _snapshotManager = snapshotManager ?? throw new ArgumentNullException(nameof(snapshotManager));
             _loopDetector = loopDetector ?? throw new ArgumentNullException(nameof(loopDetector));
+            _parallelPolicy = parallelPolicy ?? throw new ArgumentNullException(nameof(parallelPolicy));
+            _parallelRunner = parallelRunner ?? throw new ArgumentNullException(nameof(parallelRunner));
         }
 
         public IChatSessionOrchestrator CreateOrchestrator()
         {
-            return new ChatSessionOrchestrator(_chatService, _toolManager, _compactor, _snapshotManager, _loopDetector);
+            return new ChatSessionOrchestrator(
+                _chatService,
+                _toolManager,
+                _compactor,
+                _snapshotManager,
+                _loopDetector,
+                _parallelPolicy,
+                _parallelRunner);
         }
     }
 }

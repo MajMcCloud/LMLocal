@@ -1,5 +1,5 @@
 ﻿import { formatTokenStats } from '@app/lib/token.stats.js';
-import { startTooling as startToolStatus, stepTooling as stepToolStatus, finishTooling as finishToolStatus } from '@app/chat/tool.status.js';
+import { startTooling as startToolStatus, stepTooling as stepToolStatus, finishTooling as finishToolStatus, updateToolGroup as updateToolGroupStatus } from '@app/chat/tool.status.js';
 
 /**
  * Factory that creates a message DOM element, caches its internal blocks and returns an API to manipulate the message.
@@ -139,6 +139,10 @@ export function createAiMessage(container, highlightWorkerClient, currentPipelin
 
         finishTooling: (callId, withError, message) => {
             finishToolStatus(elements.toolContainer, callId, withError, message);
+        },
+
+        updateToolGroup: (groupId, completed, total) => {
+            updateToolGroupStatus(elements.toolContainer, groupId, completed, total);
         },
 
         stopStreaming: (message) => {

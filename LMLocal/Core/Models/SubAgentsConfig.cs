@@ -10,6 +10,11 @@ namespace LMLocal.Core.Models
     public class SubAgentsConfig
     {
         /// <summary>
+        /// Ultimate fallback for <see cref="MaxParallel"/> / <see cref="SubAgentDefinition.MaxParallel"/> when neither the agent nor the top-level config provides a value. 
+        /// </summary>
+        public const int DefaultMaxParallel = 2;
+
+        /// <summary>
         /// All defined SubAgents in file order.
         /// </summary>
         [JsonProperty("agents")]
@@ -70,6 +75,21 @@ namespace LMLocal.Core.Models
         public string ReasoningEffort { get; set; }
 
         /// <summary>
+        /// Top-level default for <see cref="SubAgentDefinition.Parallel"/>: when true, every agent that does not
+        /// already enable parallelism itself is enabled for parallel groups. Default: false (opt-in everywhere).
+        /// </summary>
+        [JsonProperty("parallel")]
+        public bool Parallel { get; set; }
+
+        /// <summary>
+        /// Top-level default for <see cref="SubAgentDefinition.MaxParallel"/>: the width of a parallel SubAgent
+        /// group (how many SubAgent runs may execute at once). Optional; when unset the runtime falls back to
+        /// <see cref="DefaultMaxParallel"/>.
+        /// </summary>
+        [JsonProperty("maxParallel")]
+        public int? MaxParallel { get; set; }
+
+        /// <summary>
         /// Validation errors of the most recent parse.
         /// </summary>
         [JsonIgnore]
@@ -82,6 +102,9 @@ namespace LMLocal.Core.Models
         {
             var errors = new List<string>();
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (MaxParallel.HasValue && MaxParallel.Value < 1)
+                errors.Add("'maxParallel' must be >= 1");
 
             for (int i = 0; i < Agents.Count; i++)
             {
@@ -142,6 +165,12 @@ namespace LMLocal.Core.Models
 
                 if (string.IsNullOrWhiteSpace(agent.ReasoningEffort))
                     agent.ReasoningEffort = ReasoningEffort;
+
+                if (Parallel)
+                    agent.Parallel = true;
+
+                if (!agent.MaxParallel.HasValue)
+                    agent.MaxParallel = MaxParallel;
             }
         }
 
@@ -160,7 +189,9 @@ namespace LMLocal.Core.Models
                 TimeoutSeconds = TimeoutSeconds,
                 MaxRounds = MaxRounds,
                 MaxTokens = MaxTokens,
-                ReasoningEffort = ReasoningEffort
+                ReasoningEffort = ReasoningEffort,
+                Parallel = Parallel,
+                MaxParallel = MaxParallel
             };
 
             foreach (var agent in Agents)
@@ -186,6 +217,8 @@ namespace LMLocal.Core.Models
                     MaxRounds = agent.MaxRounds,
                     MaxTokens = agent.MaxTokens,
                     ReasoningEffort = agent.ReasoningEffort,
+                    Parallel = agent.Parallel,
+                    MaxParallel = agent.MaxParallel,
                     Enabled = agent.Enabled,
                     AllowedTools = agent.AllowedTools != null ? new List<string>(agent.AllowedTools) : new List<string>()
                 });
@@ -240,7 +273,7 @@ namespace LMLocal.Core.Models
         public string Id { get; set; }
 
         /// <summary>
-        /// Optional human-readable display name shown in the UI/chat. Falls back to <see cref="Id"/>.
+        /// Optional human-readable display name shown in the UI/chat. Falls back to <see cref="Id"/> .
         /// </summary>
         [JsonProperty("displayName")]
         public string DisplayName { get; set; }
@@ -306,11 +339,24 @@ namespace LMLocal.Core.Models
         public int? MaxTokens { get; set; }
 
         /// <summary>
-        /// Reasoning effort hint for this SubAgent ("none"/"low"/"medium"/"high"). Optional.
-        /// Empty => reasoning_effort is not sent; falls back to the model profile when one matches.
+        /// Reasoning effort hint for this SubAgent ("none"/"low"/"medium"/"high"). Optional. Empty => reasoning_effort is not sent; falls back to the model profile when one matches.
         /// </summary>
         [JsonProperty("reasoningEffort")]
         public string ReasoningEffort { get; set; }
+
+        /// <summary>
+        /// Whether this agent may run inside a parallel subagent group. Default: false (sequential, as before).
+        /// </summary>
+        [JsonProperty("parallel")]
+        public bool Parallel { get; set; }
+
+        /// <summary>
+        /// Width of the parallel subagent group this agent may run in (how many runs at once). Optional.
+        /// Falls back to the top-level <see cref="SubAgentsConfig.MaxParallel"/>, then to
+        /// <see cref="SubAgentsConfig.DefaultMaxParallel"/>.
+        /// </summary>
+        [JsonProperty("maxParallel")]
+        public int? MaxParallel { get; set; }
 
         /// <summary>
         /// Whether the agent is enabled. Default: true.
@@ -359,6 +405,9 @@ namespace LMLocal.Core.Models
 
             if (MaxTokens.HasValue && MaxTokens.Value < 1)
                 errors.Add("'maxTokens' must be >= 1");
+
+            if (MaxParallel.HasValue && MaxParallel.Value < 1)
+                errors.Add("'maxParallel' must be >= 1");
 
             return errors;
         }

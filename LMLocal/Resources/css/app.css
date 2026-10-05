@@ -429,6 +429,13 @@ body {
     align-items: center;
 }
 
+#tools-mode-status {
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
     #live-token-count::before {
         content: "";
         display: inline-block;

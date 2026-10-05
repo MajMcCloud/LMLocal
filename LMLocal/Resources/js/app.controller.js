@@ -104,6 +104,7 @@ class AppController {
 
         this._instructionsStoreListener = (state, prev) => {
             inputComponent.updateInstructionsState(state, prev);
+            statusComponent.updateInstructionsState(state, prev);
         };
         instructionsStore.subscribe(this._instructionsStoreListener);
 

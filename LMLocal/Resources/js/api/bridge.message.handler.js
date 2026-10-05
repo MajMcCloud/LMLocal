@@ -10,7 +10,7 @@ class BridgeMessageHandler {
     constructor() {
         this.contentBuffer = new ChunkBuffer(Config.STREAM_BUFFER_INTERVAL_MS);
         this.thoughtBuffer = new ChunkBuffer(Config.STREAM_BUFFER_INTERVAL_MS);
-        this.onToolRoundStart = createCallback(); 
+        this.onToolRoundStart = createCallback();
         this.onFinalRound = createCallback();
     }
 
@@ -159,6 +159,27 @@ class BridgeMessageHandler {
             toolCallId: toolCall.CallId,
             toolWithError: toolCall.IsError,
             toolMessage: toolCall.Message
+        });
+    }
+
+    handleStreamToolGroupStart(group) {
+        this._setToolGroup(group, group.Completed);
+    }
+
+    handleStreamToolGroupProgress(group) {
+        this._setToolGroup(group, group.Completed);
+    }
+
+    handleStreamToolGroupEnd(group) {
+        this._setToolGroup(group, group.Total);
+    }
+
+    _setToolGroup(group, completed) {
+        const total = group.Total || 0;
+        appStore.setState({
+            toolGroupId: group.GroupId || "",
+            toolGroupTotal: total,
+            toolGroupCompleted: typeof completed === 'number' ? completed : total
         });
     }
 

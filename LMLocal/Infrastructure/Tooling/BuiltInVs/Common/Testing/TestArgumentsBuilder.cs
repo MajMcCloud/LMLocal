@@ -4,10 +4,11 @@ using System.Text;
 namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Testing
 {
     /// <summary>
-    /// Builds command-line arguments for `dotnet test`, `dotnet vstest` and `dotnet build`,
+    /// Builds command-line arguments for `dotnet test` and `dotnet vstest`,
     /// always targeting the project's own Debug configuration (no solution configuration
     /// and no platform are passed), and sanitizing the user-supplied test filter so it
-    /// cannot break or inject into the command line.
+    /// cannot break or inject into the command line. Never builds: `dotnet test` is invoked
+    /// with `--no-build`.
     /// </summary>
     internal static class TestArgumentsBuilder
     {
@@ -18,11 +19,9 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Testing
             return Sanitize(value, AllowedFilterChars);
         }
 
-        public static string BuildSdkTestArguments(string projectPath, string filter = null, bool restore = false)
+        public static string BuildSdkTestArguments(string projectPath, string filter = null)
         {
-            string args = restore
-                ? $"test \"{projectPath}\" --verbosity normal"
-                : $"test \"{projectPath}\" --no-restore --verbosity normal";
+            string args = $"test \"{projectPath}\" --no-build --verbosity normal";
 
             if (!string.IsNullOrWhiteSpace(filter))
                 args += $" --filter \"FullyQualifiedName~{filter}\"";
@@ -36,13 +35,6 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Testing
                 args += $" --TestCaseFilter:\"FullyQualifiedName~{filter}\"";
             args += " --logger:console;verbosity=normal";
             return args;
-        }
-
-        public static string BuildBuildArguments(string projectPath, bool restore = false)
-        {
-            return restore
-                ? $"build \"{projectPath}\" --configuration Debug"
-                : $"build \"{projectPath}\" --no-restore --configuration Debug";
         }
 
         private static string Sanitize(string value, string allowedChars)

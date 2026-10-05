@@ -53,6 +53,21 @@ namespace LMLocal.Infrastructure.WebView
         StreamToolEnd,
 
         /// <summary>
+        /// A parallel SubAgent fan-out group has started.
+        /// </summary>
+        StreamToolGroupStart,
+
+        /// <summary>
+        /// A member of a parallel SubAgent fan-out group finished; carries the running completed count.
+        /// </summary>
+        StreamToolGroupProgress,
+
+        /// <summary>
+        /// All members of a parallel SubAgent fan-out group finished.
+        /// </summary>
+        StreamToolGroupEnd,
+
+        /// <summary>
         /// Session begins (first message of a conversation generation cycle).
         /// Signals UI to initialize session state and clear previous status.
         /// </summary>

@@ -108,7 +108,7 @@ namespace LMLocal.Infrastructure.DependencyInjection
             services.AddTransient<IVsSolutionFilesScanner, VsSolutionFilesScanner>();
             services.AddTransient<IJsConfigResolver, JsConfigResolver>();
 
-            services.AddSingleton<IFileLockManager, FileLockManager>();
+            services.AddSingleton<IFileLockManager>(FileLockManager.Shared);
 
             services.AddSingleton<ISnapshotPathsFactory, SnapshotPathsFactory>();
             services.AddSingleton<ISnapshotSolutionEvents, SnapshotSolutionEvents>();
@@ -133,6 +133,7 @@ namespace LMLocal.Infrastructure.DependencyInjection
             services.AddTransient<IBuiltInTool, SearchFileContent>();
             services.AddTransient<IBuiltInTool, SetFileProjectStatus>();
             services.AddTransient<IBuiltInTool, SearchKnowledge>();
+            services.AddTransient<IBuiltInTool, SearchChatHistory>();
 
             services.AddTransient<IGetActiveDocument, GetActiveDocument>();
 
@@ -192,6 +193,8 @@ namespace LMLocal.Infrastructure.DependencyInjection
             services.AddSingleton<IHistoryCompactor, HistoryCompactor>();
 
             services.AddSingleton<IToolCallLoopDetector, ToolCallLoopDetector>();
+            services.AddSingleton<ISubAgentsParallelPolicy, SubAgentsParallelPolicy>();
+            services.AddSingleton<ISubAgentsParallelRunner, SubAgentsParallelRunner>();
 
             services.AddSingleton<IChatSessionOrchestrator, ChatSessionOrchestrator>();
             services.AddSingleton<IStreamingRoundService, StreamingRoundService>();

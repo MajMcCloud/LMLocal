@@ -24,6 +24,9 @@ class AppStoreClass extends BaseStoreClass {
             toolWithError: false,
             toolStep: null,
             toolMessage: "",
+            toolGroupId: "",
+            toolGroupTotal: 0,
+            toolGroupCompleted: 0,
         });
     }
 }

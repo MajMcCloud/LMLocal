@@ -50,7 +50,7 @@ public partial class SubAgentsToggleTests : AppTestBase
         // Settings store updated
         await WaitForSettingsStoreAsync(enableSubAgents: true);
 
-        // Status bar shows the SubAgents suffix next to the tools mode
+        // No tools mode -> SubAgents is not shown in the status bar
         await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("");
     }
 
@@ -83,7 +83,7 @@ public partial class SubAgentsToggleTests : AppTestBase
 
     [Test]
     [Category("Input")]
-    public async Task SubAgentsToggle_Enabled_StatusBarShowsSuffixForBothModes()
+    public async Task SubAgentsToggle_Enabled_StatusBarShowsSegmentsForBothModes()
     {
         await GotoWithMockAsync("webview-mock.js");
         await Expect(Page.Locator("#conn-status"))
@@ -95,23 +95,23 @@ public partial class SubAgentsToggleTests : AppTestBase
         await Page.Locator("#subAgentsToggleBtn").ClickAsync();
         await WaitForSettingsStoreAsync(enableSubAgents: true);
 
-        // No tools mode -> no indicator at all (suffix only applies to tools modes)
+        // No tools mode -> no indicator at all (SubAgents segment only appears alongside a tools mode)
         await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("");
 
         // Switch to Read Only via the AI tools dropdown
         await Page.Locator("#aiToolsDropdown .dropdown-trigger").ClickAsync();
         await Page.Locator("#aiToolsDropdownMenu .dropdown-item", new() { HasText = "Read Only" }).ClickAsync();
-        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Tools: Read + SubAgents");
+        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Read | SubAgents");
 
         // Switch to Read & Write
         await Page.Locator("#aiToolsDropdown .dropdown-trigger").ClickAsync();
         await Page.Locator("#aiToolsDropdownMenu .dropdown-item", new() { HasText = "Read & Write" }).ClickAsync();
-        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Tools: Read & Write + SubAgents");
+        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Read & Write | SubAgents");
 
-        // Disable Sub Agents -> suffix disappears
+        // Disable Sub Agents -> segment disappears
         await Page.Locator("#subAgentsToggleBtn").ClickAsync();
         await WaitForSettingsStoreAsync(enableSubAgents: false);
-        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Tools: Read & Write");
+        await Expect(Page.Locator("#tools-mode-status")).ToHaveTextAsync("Read & Write");
     }
 
     // ─── helpers ────────────────────────────────────────────────────────────

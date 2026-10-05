@@ -405,6 +405,28 @@ namespace LMLocal.Tests.Unit.Infrastructure
         }
 
         [Test]
+        public async Task ListModelsAsync_AdapterThrows_GenericWrapper_ExtractsInnerCause()
+        {
+            // Reproduces the ticket: the raw .NET wrapper must not reach the status bar; the inner cause must be surfaced.
+            var inner = new System.Net.WebException("No such host is known");
+            var wrapper = new System.Net.Http.HttpRequestException(
+                "An error occurred while sending the request.", inner);
+
+            var adapter = new Mock<IOpenApiAdapter>();
+            adapter
+                .Setup(a => a.ListModelsRawAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<string>()))
+                .ThrowsAsync(wrapper);
+            var service = CreateService(adapter, "http://localhost:1234", "lmstudio", null);
+
+            var result = await service.ListModelsAsync(null, CancellationToken.None);
+
+            Assert.That(result.Error, Is.EqualTo("No such host is known"));
+            Assert.That(result.Error, Does.Not.Contain("An error occurred while sending the request"));
+            Assert.That(result.Models, Is.Empty);
+        }
+
+        [Test]
         public async Task ListModelsAsync_ProviderError_NoCustomModels_KeepsError()
         {
             var adapter = CreateAdapter(_ => "{ \"error\": \"No models returned from backend\" }");

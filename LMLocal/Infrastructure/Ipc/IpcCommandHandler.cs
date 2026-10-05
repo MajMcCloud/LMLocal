@@ -12,6 +12,7 @@ using LMLocal.Infrastructure.DependencyInjection;
 using LMLocal.Infrastructure.SubAgents;
 using LMLocal.Infrastructure.Tooling;
 using LMLocal.Infrastructure.Tooling.BuiltInVs;
+using LMLocal.Infrastructure.Tooling.BuiltInVs.Snapshot;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Newtonsoft.Json;
@@ -19,6 +20,26 @@ using Newtonsoft.Json.Linq;
 
 internal static class IpcCommandHandler
 {
+    /// <summary>
+    /// Maps legacy PascalCase IPC command names to the canonical lowercase tool names
+    /// registered in the built-in tool provider.
+    /// </summary>
+    private static readonly Dictionary<string, string> LegacyToolAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        { "GetActiveDocument", "get_active_document" },
+        { "SearchInFiles", "search_file_content" },
+        { "ReadFileLines", "read_file_lines" },
+        { "GetSolutionOverview", "get_solution_overview" },
+        { "FindFilesByName", "find_files" },
+        { "find_symbol_references", "get_symbol_info" },
+        { "ListDirectoryContents", "list_directory" }
+    };
+
+    private static string GetLegacyAlias(string cmd)
+    {
+        return LegacyToolAliases.TryGetValue(cmd, out var alias) ? alias : null;
+    }
+
     public static async Task HandleCommandAsync(AsyncPackage package, string command, StreamWriter writer, CancellationToken token)
     {
         if (string.Equals(command, "Ping", StringComparison.OrdinalIgnoreCase))
@@ -96,147 +117,67 @@ internal static class IpcCommandHandler
             {
                 await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
 
-                if (string.Equals(cmd, "GetActiveDocument", StringComparison.OrdinalIgnoreCase))
+                for (int i = 2; i < parts.Length; i++)
                 {
-                    var parameters = new Dictionary<string, object>();
-                    var res = await builtInVsToolProvider.ExecuteAsync("get_active_document", parameters, token);
-                    await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
+                    parts[i] = Uri.UnescapeDataString(parts[i]);
                 }
-                else if (string.Equals(cmd, "SearchInFiles", StringComparison.OrdinalIgnoreCase))
+
+                var canonical = cmd;
+                string legacyAlias = GetLegacyAlias(canonical);
+                if (legacyAlias != null)
+                    canonical = legacyAlias;
+
+                // Resolve the tool up-front so unknown names fail fast and reliably.
+                if (!builtInVsToolProvider.ToolExists(canonical))
                 {
-                    if (parts.Length < 3)
+                    await writer.WriteLineAsync("{\"error\":\"Unknown tool: " + canonical + "\"}");
+                    return;
+                }
+
+                // Write tools (FullAccess) record file snapshots for the Changes panel /
+                // rollback, and SnapshotManager requires an active snapshot batch around
+                // every execution round — exactly as ChatSessionOrchestrator does.
+                // Open the batch here so write tools work through raw IPC (E2E harness)
+                // instead of failing with "Cannot perform snapshot while a batch is not active."
+                var accessLevel = builtInVsToolProvider.GetToolAccessLevel(canonical);
+                bool isFullAccess = accessLevel == ToolAccessLevel.FullAccess;
+
+                ISnapshotManager snapshotManager = null;
+                if (isFullAccess)
+                {
+                    snapshotManager = ServiceConfiguration.GetService<ISnapshotManager>();
+                    if (snapshotManager == null)
                     {
-                        await writer.WriteLineAsync("MissingQuery");
+                        await writer.WriteLineAsync("{\"error\":\"Snapshot service is not registered.\"}");
                         return;
                     }
-
-                    var text = parts[2];
-                    var extension = parts.Length >= 4 ? parts[3] : ".cs";
-                    var parameters = new Dictionary<string, object>
-                    {
-                        { "text", text },
-                        { "extension_filter", extension }
-                    };
-
-                    var res = await builtInVsToolProvider.ExecuteAsync("search_file_content", parameters, token);
-                    await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
+                    await snapshotManager.BeginBatchAsync(token).ConfigureAwait(false);
                 }
-                else if (string.Equals(cmd, "ReadFileLines", StringComparison.OrdinalIgnoreCase))
+
+                bool toolSucceeded = false;
+                try
                 {
-                    if (parts.Length < 5)
+                    var res = await ExecuteToolAsync(builtInVsToolProvider, canonical, parts, token);
+                    toolSucceeded = true;
+
+                    if (string.Equals(canonical, "get_symbol_info", StringComparison.OrdinalIgnoreCase))
                     {
-                        await writer.WriteLineAsync("MissingParameters");
-                        return;
+                        await writer.WriteLineAsync(TransformSymbolInfo(res));
                     }
-
-                    var filePath = parts[2];
-                    if (!int.TryParse(parts[3], out int startLine) || !int.TryParse(parts[4], out int endLine))
+                    else
                     {
-                        await writer.WriteLineAsync("InvalidLineNumbers");
-                        return;
+                        await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
                     }
-
-                    var parameters = new Dictionary<string, object>
-                    {
-                        { "file_path", filePath },
-                        { "start_line", startLine },
-                        { "end_line", endLine }
-                    };
-
-                    var res = await builtInVsToolProvider.ExecuteAsync("read_file_lines", parameters, token);
-                    await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
                 }
-                else if (string.Equals(cmd, "GetSolutionOverview", StringComparison.OrdinalIgnoreCase))
+                finally
                 {
-                    var parameters = new Dictionary<string, object>();
-                    var res = await builtInVsToolProvider.ExecuteAsync("get_solution_overview", parameters, token);
-                    await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
-                }
-                else if (string.Equals(cmd, "FindFilesByName", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (parts.Length < 3)
+                    if (isFullAccess && snapshotManager != null)
                     {
-                        await writer.WriteLineAsync("MissingFileName");
-                        return;
+                        if (toolSucceeded)
+                            await snapshotManager.EndBatchAsync(token).ConfigureAwait(false);
+                        else
+                            await snapshotManager.CancelBatchAsync(token).ConfigureAwait(false);
                     }
-
-                    var fileName = parts[2];
-                    var extension = parts.Length >= 4 ? parts[3] : null;
-                    var parameters = new Dictionary<string, object>
-                    {
-                        { "file_name", fileName }
-                    };
-
-                    if (!string.IsNullOrEmpty(extension))
-                    {
-                        parameters["extension_filter"] = extension;
-                    }
-
-                    var res = await builtInVsToolProvider.ExecuteAsync("find_files", parameters, token);
-                    await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
-                }
-                else if (string.Equals(cmd, "find_symbol_references", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (parts.Length < 3)
-                    {
-                        await writer.WriteLineAsync("MissingSymbolName");
-                        return;
-                    }
-
-                    var symbolName = parts[2];
-                    var parameters = new Dictionary<string, object>
-                    {
-                        { "symbol_name", symbolName }
-                    };
-
-                    var res = await builtInVsToolProvider.ExecuteAsync("get_symbol_info", parameters, token);
-                    var json = JsonConvert.SerializeObject(res);
-                    var obj = JObject.Parse(json);
-
-                    // Transform to match test expectations: 'references' → 'results', 'text' → 'matches'
-                    var transformed = new JObject
-                    {
-                        ["symbol_name"] = obj["symbol_name"],
-                        ["total_references"] = obj["total_references"],
-                        ["success"] = obj["success"],
-                        ["error_message"] = obj["error_message"]
-                    };
-
-                    var results = new JArray();
-                    if (obj["references"] is JArray references)
-                    {
-                        foreach (var r in references)
-                        {
-                            var match = new JObject
-                            {
-                                ["line"] = r["line"],
-                                ["text"] = r["text"]
-                            };
-                            var resultItem = new JObject
-                            {
-                                ["file_path"] = r["file_path"],
-                                ["matches"] = new JArray(match)
-                            };
-                            results.Add(resultItem);
-                        }
-                    }
-                    transformed["results"] = results;
-                    await writer.WriteLineAsync(transformed.ToString(Formatting.None));
-                }
-                else if (string.Equals(cmd, "ListDirectoryContents", StringComparison.OrdinalIgnoreCase))
-                {
-                    var directoryPath = parts.Length >= 3 ? parts[2] : ".";
-                    var parameters = new Dictionary<string, object>
-                    {
-                        { "directory_path", directoryPath }
-                    };
-
-                    var res = await builtInVsToolProvider.ExecuteAsync("list_directory", parameters, token);
-                    await writer.WriteLineAsync(JsonConvert.SerializeObject(res));
-                }
-                else
-                {
-                    await writer.WriteLineAsync("UnknownToolCommand");
                 }
             }
             catch (OperationCanceledException)
@@ -327,7 +268,7 @@ internal static class IpcCommandHandler
                 var agent = (config == null || config.Agents == null)
                     ? null
                     : config.Agents.FirstOrDefault(a => a != null &&
-                        string.Equals(a.Id != null ? a.Id.Trim() : null, agentId, StringComparison.OrdinalIgnoreCase));
+                        string.Equals(a.Id?.Trim(), agentId, StringComparison.OrdinalIgnoreCase));
 
                 if (agent == null)
                 {
@@ -385,5 +326,97 @@ internal static class IpcCommandHandler
         }
 
         await writer.WriteLineAsync("UnknownCommand");
+    }
+
+    /// <summary>
+    /// Executes any registered tool using positional string arguments (index 2.. of the
+    /// pipe-delimited command). Parameter names are taken from the tool's declared schema
+    /// in declaration order, so the client only has to provide values, in the same order
+    /// as the tool's parameter properties (or Required list).
+    /// </summary>
+    private static async Task<object> ExecuteToolAsync(
+        IBuiltInVsToolProvider provider,
+        string toolName,
+        string[] parts,
+        CancellationToken token)
+    {
+        var tool = provider.GetTool(toolName);
+        var definition = tool.GetToolInfo();
+        var props = definition.Parameters?.Properties;
+        if (props == null || props.Count == 0 || parts.Length <= 2)
+        {
+            return await provider.ExecuteAsync(toolName, new Dictionary<string, object>(), token);
+        }
+
+        var required = definition.Parameters?.Required ?? new List<string>();
+
+        // Order parameters as: required first (in declared Required order), then the rest
+        // in dictionary order. Positional values map to this list one-to-one.
+        var orderedNames = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in required)
+        {
+            if (!seen.Contains(r) && props.ContainsKey(r))
+            {
+                orderedNames.Add(r);
+                seen.Add(r);
+            }
+        }
+        foreach (var kv in props)
+        {
+            if (!seen.Contains(kv.Key))
+            {
+                orderedNames.Add(kv.Key);
+                seen.Add(kv.Key);
+            }
+        }
+
+        var parameters = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        int idx = 0;
+        for (int i = 2; i < parts.Length && idx < orderedNames.Count; i++, idx++)
+        {
+            parameters[orderedNames[idx]] = parts[i];
+        }
+
+        return await provider.ExecuteAsync(toolName, parameters, token);
+    }
+
+    /// <summary>
+    /// Transforms get_symbol_info output to the legacy shape expected by existing tests:
+    /// 'references' → 'results', per-reference 'text' → 'matches'.
+    /// </summary>
+    private static string TransformSymbolInfo(object result)
+    {
+        var json = JsonConvert.SerializeObject(result);
+        var obj = JObject.Parse(json);
+
+        var transformed = new JObject
+        {
+            ["symbol_name"] = obj["symbol_name"],
+            ["total_references"] = obj["total_references"],
+            ["success"] = obj["success"],
+            ["error_message"] = obj["error_message"]
+        };
+
+        var results = new JArray();
+        if (obj["references"] is JArray references)
+        {
+            foreach (var r in references)
+            {
+                var match = new JObject
+                {
+                    ["line"] = r["line"],
+                    ["text"] = r["text"]
+                };
+                var resultItem = new JObject
+                {
+                    ["file_path"] = r["file_path"],
+                    ["matches"] = new JArray(match)
+                };
+                results.Add(resultItem);
+            }
+        }
+        transformed["results"] = results;
+        return transformed.ToString(Formatting.None);
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -48,6 +49,16 @@ namespace LMLocal.Infrastructure.Persistence
         /// Scans jsonl chat files for a specific session by ID, returns all its messages in chronological order, and makes it the current session for subsequent saves.
         /// </summary>
         Task<List<ChatMessage>> LoadSessionByIdAsync(string sessionId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Id of the session currently being written or loaded (the live session). Read-only; querying it never mutates state.
+        /// </summary>
+        Guid? CurrentSessionId { get; }
+
+        /// <summary>
+        /// Read-only single-pass scan of the newest jsonl files that returns every session's messages in chronological order, each paired with its UTC timestamp.
+        /// </summary>
+        Task<List<ChatSessionLog>> ReadAllSessionsAsync(CancellationToken cancellationToken = default);
     }
 
     internal class ChatPersistenceService : IChatPersistenceService
@@ -56,6 +67,7 @@ namespace LMLocal.Infrastructure.Persistence
         private readonly IFileSystem _fileSystem;
         private readonly ISettingsManager _settingsManager;
         private readonly SemaphoreSlim _writeSemaphore = new SemaphoreSlim(1, 1);
+        private readonly IFileLockManager _fileLockManager;
 
         /// <summary>
         /// Identifies the current chat session. Regenerated every time
@@ -63,10 +75,15 @@ namespace LMLocal.Infrastructure.Persistence
         private Guid _currentSessionId;
 
         /// <summary>
+        /// Id of the session currently being written or loaded (the live session). Read-only.
+        /// </summary>
+        public Guid? CurrentSessionId => _currentSessionId;
+
+        /// <summary>
         /// Creates a persistence service bound to the configured local chat history directory.
         /// </summary>
         public ChatPersistenceService(ISettingsManager settingsManager, IFileSystem fileSystem)
-            : this(settingsManager, fileSystem, null)
+            : this(settingsManager, fileSystem, null, FileLockManager.Shared)
         {
         }
 
@@ -74,9 +91,26 @@ namespace LMLocal.Infrastructure.Persistence
         /// Creates a persistence service bound to an explicit directory.
         /// </summary>
         public ChatPersistenceService(ISettingsManager settingsManager, IFileSystem fileSystem, string explicitDirectory)
+            : this(settingsManager, fileSystem, explicitDirectory, FileLockManager.Shared)
+        {
+        }
+
+        /// <summary>
+        /// Creates a persistence service bound to the configured local chat history directory, using the supplied process-wide file lock manager to serialize appends to the shared hourly jsonl file.
+        /// </summary>
+        public ChatPersistenceService(ISettingsManager settingsManager, IFileSystem fileSystem, IFileLockManager fileLockManager)
+            : this(settingsManager, fileSystem, null, fileLockManager)
+        {
+        }
+
+        /// <summary>
+        /// Creates a persistence service bound to an explicit directory and file lock manager.
+        /// </summary>
+        public ChatPersistenceService(ISettingsManager settingsManager, IFileSystem fileSystem, string explicitDirectory, IFileLockManager fileLockManager)
         {
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+            _fileLockManager = fileLockManager ?? throw new ArgumentNullException(nameof(fileLockManager));
 
             _chatHistoryDir = string.IsNullOrWhiteSpace(explicitDirectory)
                 ? Path.Combine(
@@ -246,13 +280,21 @@ namespace LMLocal.Infrastructure.Persistence
         {
             byte[] data = Encoding.UTF8.GetBytes(jsonLine);
 
-            if (_fileSystem.FileExists(filePath))
+            await _fileLockManager.WaitAsync(filePath, cancellationToken).ConfigureAwait(false);
+            try
             {
-                await _fileSystem.AppendAllBytesAsync(filePath, data, cancellationToken).ConfigureAwait(false);
+                if (_fileSystem.FileExists(filePath))
+                {
+                    await _fileSystem.AppendAllBytesAsync(filePath, data, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _fileSystem.WriteAllBytesAsync(filePath, data, cancellationToken).ConfigureAwait(false);
+                }
             }
-            else
+            finally
             {
-                await _fileSystem.WriteAllBytesAsync(filePath, data, cancellationToken).ConfigureAwait(false);
+                _fileLockManager.Release(filePath);
             }
         }
 
@@ -454,6 +496,72 @@ namespace LMLocal.Infrastructure.Persistence
 
             messages.Reverse();
             return messages;
+        }
+
+        /// <summary>
+        /// Read-only single-pass scan of the newest jsonl files that returns every session's messages in chronological order, each paired with its UTC timestamp.
+        /// </summary>
+        public async Task<List<ChatSessionLog>> ReadAllSessionsAsync(CancellationToken cancellationToken = default)
+        {
+            var files = await ReadJsonlFilesAsync(cancellationToken).ConfigureAwait(false);
+
+            if (files.Count == 0)
+                return new List<ChatSessionLog>();
+
+            var bySession = new Dictionary<string, ChatSessionLog>(StringComparer.Ordinal);
+
+            foreach (var file in files)
+            {
+                var lines = file.Lines;
+
+                for (int i = lines.Count - 1; i >= 0; i--)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    JObject obj = lines[i];
+
+                    string sessionId = obj.Value<string>("session_id");
+                    if (string.IsNullOrEmpty(sessionId)) continue;
+
+                    string entryType = obj.Value<string>("type");
+                    if (entryType == "session_start") continue;
+
+                    var chatMessage = ChatLogSerializer.ParseChatMessage(obj);
+                    if (chatMessage == null) continue;
+
+                    if (!bySession.TryGetValue(sessionId, out var log))
+                    {
+                        log = new ChatSessionLog { SessionId = sessionId, Entries = new List<ChatLogEntry>() };
+                        bySession[sessionId] = log;
+                    }
+
+                    log.Entries.Add(new ChatLogEntry
+                    {
+                        Message = chatMessage,
+                        TimestampUtc = ParseTimestamp(obj)
+                    });
+                }
+            }
+
+            foreach (var log in bySession.Values)
+                log.Entries.Reverse();
+
+            return new List<ChatSessionLog>(bySession.Values);
+        }
+
+        /// <summary>
+        /// Parses the "timestamp" field of a jsonl line (ISO-8601 round-trip) into UTC, or <see cref="DateTime.MinValue"/> when absent/unparsable.
+        /// </summary>
+        private static DateTime ParseTimestamp(JObject obj)
+        {
+            string timestamp = obj.Value<string>("timestamp");
+            if (!string.IsNullOrEmpty(timestamp)
+                && DateTime.TryParse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime parsed))
+            {
+                return parsed.ToUniversalTime();
+            }
+
+            return DateTime.MinValue;
         }
 
         /// <summary>

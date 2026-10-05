@@ -487,13 +487,13 @@ public class MoveCaretTests : AppTestBase
         await GotoReadyAsync();
         var s = await MoveAsync("End", shift: true, ctrl: true, selStart: 10, selEnd: 10);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(s.Start, Is.EqualTo(10));
             Assert.That(s.End, Is.EqualTo(30));
             Assert.That(s.Direction, Is.EqualTo("forward"));
             Assert.That(s.Anchor, Is.EqualTo("10"));
-        });
+        }
     }
 
     [Test]
@@ -503,13 +503,13 @@ public class MoveCaretTests : AppTestBase
         await GotoReadyAsync();
         var s = await MoveAsync("ArrowLeft", shift: true, ctrl: true, selStart: 27, selEnd: 27);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(s.Start, Is.EqualTo(23));
             Assert.That(s.End, Is.EqualTo(27));
             Assert.That(s.Direction, Is.EqualTo("backward"));
             Assert.That(s.Anchor, Is.EqualTo("27"));
-        });
+        }
     }
 
     [Test]
@@ -519,12 +519,12 @@ public class MoveCaretTests : AppTestBase
         await GotoReadyAsync();
         var s = await MoveAsync("ArrowRight", shift: true, ctrl: true, selStart: 13, selEnd: 13);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(s.Start, Is.EqualTo(13));
             Assert.That(s.End, Is.EqualTo(16));
             Assert.That(s.Direction, Is.EqualTo("forward"));
             Assert.That(s.Anchor, Is.EqualTo("13"));
-        });
+        }
     }
 }

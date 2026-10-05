@@ -70,7 +70,7 @@ namespace LMLocal.Application.ModelsList
             catch (Exception ex)
             {
                 InternalLogger.Error("ListModelsAsync failed", ex);
-                var errorResponse = new UnifiedListModelsResponse { Error = ex.Message };
+                var errorResponse = new UnifiedListModelsResponse { Error = ExceptionFormatter.Format(ex) };
                 await ApplyModelOverridesAsync(
                     errorResponse,
                     _settingsManager.Current?.Provider ?? "lmstudio",
@@ -226,7 +226,7 @@ namespace LMLocal.Application.ModelsList
             catch (Exception ex)
             {
                 InternalLogger.Error("ListModelsForProviderAsync failed", ex);
-                return new UnifiedListModelsResponse { Error = ex.Message };
+                return new UnifiedListModelsResponse { Error = ExceptionFormatter.Format(ex) };
             }
         }
     }

@@ -37,6 +37,14 @@ namespace LMLocal.Tests.E2E.VSIX
             public string AgentId;
             public string Prompt;
             public string[] MustContain = new string[0];
+
+            // Alternative evidence groups (OR-sets). Each inner array is a group;
+            public string[][] MustContainAny = new string[0][];
+
+            // Ordered evidence: each marker must appear in the answer AND its first occurrence must come after the first occurrence of the previous marker.
+            public string[] MustContainInOrder = new string[0];
+            // Hard negative evidence: each string MUST NOT appear anywhere in the answer.
+            public string[] MustNotContain = new string[0];
             public bool ExpectNotFound;
             public bool CheckRefusal = true;
             public TimeSpan ReadTimeout = TimeSpan.FromMinutes(5);
@@ -66,7 +74,7 @@ namespace LMLocal.Tests.E2E.VSIX
             public List<string> Violations = new List<string>();
         }
 
-        // Mirror of SubAgentsRunResponse serialized over the pipe. Json.NET matches property names case-insensitively, so we do not need to reference LMLocal types.
+        // Mirror of SubAgentsRunResponse serialized over the pipe.
         private sealed class RunResponseDto
         {
             public bool Success { get; set; }
@@ -125,33 +133,42 @@ namespace LMLocal.Tests.E2E.VSIX
         {
             var list = new List<Scenario>();
             var guid = Guid.NewGuid().ToString("N").Substring(0, 12);
-            // ---- A.1 code_explorer_subagent: discovery (10) -------------------
+            //----A.1 code_explorer_subagent: discovery(10)------------------ -
             list.Add(Sc("A1.1", Explorer,
                 "Find where the class ToolCallRecord is declared. Report the file path and line number.",
                 "StreamCompletionResult.cs", "114"));
+
             list.Add(Sc("A1.2", Explorer,
                 "Find all occurrences of GetAsync in the solution. Report how many were found and list the first few files.",
                 "GetAsync"));
+
             list.Add(Sc("A1.3", Explorer,
                 "Find the file that defines the class ChatLogSerializer.",
                 "ChatLogSerializer.cs", "Persistence"));
+
             list.Add(NotFoundSc("A1.4", Explorer,
                 "Check whether any .csproj in the solution references the NuGet package Newtonsoft.Json. Distinguish a PackageReference directed at that package from a using Newtonsoft.Json directive in source files.",
                 "PackageReference"));
+
             list.Add(Sc("A1.5", Explorer,
                 "Find the file named StreamProcessor.cs and report its exact path.",
                 "StreamProcessor.cs"));
+
             list.Add(Sc("A1.6", Explorer,
                 "Find all occurrences of ConsolidateLastExchangeAsync in the production project LMLocal only (exclude test projects).",
                 "ConsolidateLastExchangeAsync"));
+
             list.Add(NotFoundSc("A1.7", Explorer,
                 $"Search for the literal text bench-{guid}-{guid}."));
+
             list.Add(Sc("A1.8", Explorer,
                 "Search for 'using Newtonsoft' and return the complete result list, handling pagination. State the total count and whether the list is truncated.",
                 "Newtonsoft"));
+
             list.Add(NotFoundSc("A1.9", Explorer,
                 "Describe the project structure of a project named LMLocal.Web.",
                 "LMLocal.Web"));
+
             list.Add(Sc("A1.10", Explorer,
                 "Search for the exact identifier \"ToolCallRecord\" and report all matching file paths and line numbers from all pages.",
                 "StreamCompletionResult.cs", "114"));
@@ -160,54 +177,104 @@ namespace LMLocal.Tests.E2E.VSIX
             list.Add(Sc("A2.1", Reader,
                 "Read the entire file LMLocal/Infrastructure/Persistence/ChatLogSerializer.cs and return it verbatim.",
                 "MaxPromptLength"));
+
             list.Add(ScVerbatim("A2.2", Reader,
-                "Read lines 1-12 of readme.md and return them verbatim.",
+                "Read lines 1-12 of LMLocal\\GettingStarted.txt and return them verbatim.",
                 "LM Local", "Visual Studio"));
+
             list.Add(Sc("A2.3", Reader,
-                "Find the file matching *StreamProcessor* and read it.",
+                "Find the file named exactly StreamProcessor.cs and read it (there is also a StreamProcessorFactory.cs in the same folder - do not pick the factory).",
                 "ToolCallRecord", "LlmSseParser"));
 
-            list.Add(ScVerbatim("A2.5", Reader,
+            list.Add(ScVerbatim("A2.4", Reader,
                 "Read these three files and return them verbatim: LMLocal\\Infrastructure\\Persistence\\ChatLogSerializer.cs, LMLocal\\Infrastructure\\Persistence\\ChatPersistenceService.cs, LMLocal\\Core\\Models\\StreamChunk.cs.",
                 "MaxPromptLength", "SaveLastMessageAsync", "ChunkKind"));
-            list.Add(Sc("A2.6", Reader,
-                "Read the full bodies of AddAssistantMessage, SetPendingAssistant and ConsolidateLastExchangeAsync from LMLocal/Application/Chat/ChatHistoryManager.cs.",
-                "IReadOnlyList<ToolCallRecord>", "_pendingAssistantToolCalls", "lookbackLimit"));
-            list.Add(ScVerbatim("A2.7", Reader,
+
+            list.Add(ScVerbatim("A2.5", Reader,
                 "Read these 4 files and return them verbatim: ChatLogSerializer.cs, StreamCompletionResult.cs, StreamProcessor.cs, ChatHistoryManager.cs.",
                 "ChatLogSerializer", "ToolCallRecord", "ProcessStreamAsync", "ConsolidateLastExchangeAsync"));
-            list.Add(NotFoundSc("A2.8", Reader,
+
+            list.Add(NotFoundSc("A2.6", Reader,
                 "Read LMLocal/Infrastructure/Persistence/NoSuchSerializer.cs.",
                 "NoSuchSerializer.cs"));
-            list.Add(Sc("A2.9", Reader,
+
+            list.Add(Sc("A2.7", Reader,
                 "Read LMLocal/Infrastructure/Persistence/ChatLogSerializer.cs. If the entire file is not returned, clearly state that it is partial and identify the missing portion.",
                 "MaxPromptLength"));
 
-            //----A.3 symbol_analyzer_subagent: symbols & references(8)------ -
+            list.Add(ScVerbatim("A2.8", Reader,
+                "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-truth-fixture.md and return it verbatim.",
+                "## 1. First Section", "## Appendix A. References", "## 2. Second Section", "Tail-Anchor-Open"));
+
+            var a209 = Sc("A2.9", Reader,
+                "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-truth-fixture.md. Verify whether these headings appear in this exact order: \"## 1. First Section\", \"## 2. Second Section\", \"## 3. Third Section\", \"## Appendix A. References\". Use the actual file contents and line positions. Do not infer or assume any heading or position that is not present in the retrieved content.",
+                "## Appendix A. References");
+            a209.MustContainInOrder = new[] { "## 1. First Section", "## Appendix A. References", "## 2. Second Section", "## 3. Third Section" };
+            list.Add(a209);
+
+            list.Add(Sc("A2.10", Reader,
+                "Read the entire file LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-large-fixture.md (400 lines) and return it verbatim. Continue reading until the entire file has been retrieved; do not stop while has_more_results is true.",
+                "Reader-Start", "Reader-End"));
+
+            var a211 = ScVerbatim("A2.11", Reader,
+                "In LMLocal\\Infrastructure\\Security\\TestConnectionErrorClassifier.cs return VERBATIM only the single line that contains ExceptionFormatter.Format, prefixed with its correct 1-based line number. Return no other line of the file and do not mark the file as missing.",
+                "ExceptionFormatter.Format(ex)", "32:");
+            a211.MustNotContain = new[] { "Missing files" };
+            list.Add(a211);
+
+            var a212 = ScVerbatim("A2.12", Reader,
+                "In LMLocal\\Application\\ModelsList\\ModelsListService.cs return VERBATIM only the two lines that contain ExceptionFormatter.Format, each prefixed with its correct 1-based line number. Return no other line of the file and do not mark the file as missing.",
+                "ExceptionFormatter.Format(ex)", "73:", "229:");
+            a212.MustNotContain = new[] { "Missing files" };
+            list.Add(a212);
+
+            var a213 = ScVerbatim("A2.13", Reader,
+                "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-ranges-fixture.md and return ONLY lines 11-15 and lines 30-39 VERBATIM, each line prefixed with its actual 1-based line number. Do not include any other line of the file, do not substitute different ranges, and do not mark the file as missing.",
+                "RANGE-ANCHOR-A1-OPEN", "RANGE-ANCHOR-A1-CLOSE", "RANGE-ANCHOR-A3-CLOSE", "RANGE-ANCHOR-APP-OPEN");
+            a213.MustContainInOrder = new[] { "RANGE-ANCHOR-A1-OPEN", "RANGE-ANCHOR-A1-CLOSE", "RANGE-ANCHOR-A3-CLOSE", "RANGE-ANCHOR-APP-OPEN" };
+            a213.MustNotContain = new[] { "RANGE-ANCHOR-A2-OPEN", "RANGE-ANCHOR-A2-CLOSE", "RANGE-ANCHOR-A3-OPEN", "RANGE-ANCHOR-APP-CLOSE", "RANGE-ANCHOR-TAIL-OPEN", "RANGE-ANCHOR-A1-OPEN-COPY", "RANGE-ANCHOR-A1-CLOSE-COPY", "# End of fixture" };
+            list.Add(a213);
+
+            //----A.3 symbol_analyzer_subagent: symbols & references(9)------ -
             list.Add(Sc("A3.1", Analyzer,
                 "Find the C# symbol ToolCallRecord and report its declaration file and line.",
                 "StreamCompletionResult.cs", "114"));
+
             list.Add(Sc("A3.2", Analyzer,
                 "Find all references to ChatLogSerializer. Report file:line coordinates.",
                 "ChatLogSerializer", "ChatHistoryManager.cs"));
+
             list.Add(Sc("A3.3", Analyzer,
                 "Inspect the type StreamCompletionResult and list its public members with file:line locations.",
                 "ContentResponse", "ToolCalls"));
+
             list.Add(Sc("A3.4", Analyzer,
                 "Find the JavaScript symbol lmInit and report its file and line. Use the semantic JavaScript tool.",
                 "app.js"));
+
             list.Add(NotFoundSc("A3.5", Analyzer,
                 "Find the symbol GeminiThoughtSignaturePolicyEnforcer.",
                 "GeminiThoughtSignaturePolicyEnforcer"));
+
             list.Add(Sc("A3.6", Analyzer,
                 "Find the symbol ToolCallRecord, then read its declaration context.",
                 "ToolCallRecord", "StreamCompletionResult.cs"));
-            list.Add(Sc("A3.7", Analyzer,
-                "Find all references to ToolCalls declared in LMLocal/Core/Models/ChatMessage.cs.",
-                "ToolCalls", "ChatMessage.cs", "ApiRequestBuilder.cs"));
-            list.Add(Sc("A3.8", Analyzer,
+
+            var a37 = Sc("A3.7", Analyzer,
+                "Find all references to the ToolCalls property of the type ChatMessage (declared in LMLocal/Core/Models/ChatMessage.cs). Ignore the same-named ToolCalls property on other types such as Message and StreamCompletionResult. Retrieve ALL pages of references and state the total reference count.",
+                "ToolCalls", "ChatMessage.cs");
+            a37.MustContainAny = new[] { new[] { "ApiRequestBuilder.cs", "ApiRequestBuilder" } };
+            list.Add(a37);
+
+            var a38 = Sc("A3.8", Analyzer,
                 "Inspect ConsolidateLastExchangeAsync and determine whether ToolCalls is copied by reference or reconstructed. Read the actual source before answering.",
-                "ConsolidateLastExchangeAsync", "finalAssistantIdx", "reference"));
+                "ConsolidateLastExchangeAsync", "ToolCalls");
+            a38.MustContainAny = new[] { new[] { "reference", "same instance", "reused", "not reconstructed" } };
+            list.Add(a38);
+
+            list.Add(Sc("A3.9", Analyzer,
+                "Find the C# method AddAssistantMessage in LMLocal/Application/Chat/ChatHistoryManager.cs. It has an interface declaration and two concrete overloads. Select the concrete implementation overload that accepts IReadOnlyList<ToolCallRecord> and return its declaration line together with its full implementation body.",
+                "AddAssistantMessage", "toolCallObjects", "normalizedArguments"));
 
 
             return list;
@@ -218,6 +285,8 @@ namespace LMLocal.Tests.E2E.VSIX
         // ---------------------------------------------------------------------
 
         [TestMethod]
+        //[Retry(10)]
+        //[Ignore("Disable to run benchmark")]
         public async Task Run_Full_Benchmark()
         {
             // Requires a running LM Studio + an Experimental VS instance; never auto-run.
@@ -230,8 +299,7 @@ namespace LMLocal.Tests.E2E.VSIX
                     IpcClient client = await IpcClient.ConnectAsync(PipeName, TimeSpan.FromMinutes(2), cts.Token);
                     try
                     {
-                        // 1) Readiness gate: solution must be open (subagents return
-                        //    "No solution is open" otherwise). Existing IPC command.
+                        // 1) Readiness gate: solution must be open (subagents return "No solution is open" otherwise). Existing IPC command.
                         var solutionPath = GetSolutionPath();
                         var resp = await client.SendCommandAsync("OpenSolution|" + solutionPath, cts.Token);
                         Assert.AreEqual("OK", resp, "OpenSolution IPC command failed");
@@ -373,8 +441,6 @@ namespace LMLocal.Tests.E2E.VSIX
             }
 
             // Expected "NOT FOUND" honesty marker.
-            // We match a broad set of refusal/absence patterns. The model may
-            // phrase this very differently, so we use a union of common variants.
             bool notFoundMarker = false;
             if (s.ExpectNotFound)
             {
@@ -386,8 +452,6 @@ namespace LMLocal.Tests.E2E.VSIX
             }
 
             // Required evidence in the answer.
-            // For ExpectNotFound scenarios that returned a valid NOT_FOUND marker,
-            // the searched token legitimately absent from the answer — skip evidence.
             foreach (var ev in s.MustContain ?? new string[0])
             {
                 if (notFoundMarker)
@@ -400,11 +464,65 @@ namespace LMLocal.Tests.E2E.VSIX
                 }
             }
 
+            // Alternative evidence groups (OR-groups). 
+            if (!notFoundMarker)
+            {
+                foreach (var group in s.MustContainAny ?? new string[0][])
+                {
+                    if (group == null || group.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    bool any = group.Any(alt => content.IndexOf(alt, StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!any)
+                    {
+                        violations.Add(new Violation("missing_evidence(any of): " + string.Join(" | ", group), true));
+                    }
+                }
+            }
+
+            // Ordered evidence: all markers must be present and appear in the given relative order (checked by first occurrence). 
+            if (!notFoundMarker && s.MustContainInOrder != null && s.MustContainInOrder.Length > 0)
+            {
+                int prevIdx = -1;
+                for (int i = 0; i < s.MustContainInOrder.Length; i++)
+                {
+                    var marker = s.MustContainInOrder[i];
+                    var idx = content.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                    if (idx < 0)
+                    {
+                        violations.Add(new Violation("missing_evidence(ordered): " + marker, true));
+                        break;
+                    }
+
+                    if (i > 0 && idx <= prevIdx)
+                    {
+                        violations.Add(new Violation(
+                            "wrong_order: '" + s.MustContainInOrder[i] + "' appears before/at '" + s.MustContainInOrder[i - 1] + "'", true));
+                        break;
+                    }
+
+                    prevIdx = idx;
+                }
+            }
+
+            // Hard negative evidence: each marker MUST NOT appear anywhere in the answer.
+            if (!notFoundMarker && s.MustNotContain != null)
+            {
+                foreach (var banned in s.MustNotContain)
+                {
+                    if (content.IndexOf(banned, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        violations.Add(new Violation("forbidden_evidence: " + banned, true));
+                    }
+                }
+            }
+
             // Invented-path cross-check (only for non-mutating scenarios).
             if (notFoundMarker)
             {
-                // Honest NOT_FOUND — no invented-path check needed:
-                // the non-existing path is exactly what we expected to see.
+                // Honest NOT_FOUND — no invented-path check needed: the non-existing path is exactly what we expected to see.
             }
             else
             {
@@ -539,8 +657,6 @@ namespace LMLocal.Tests.E2E.VSIX
 
         /// <summary>
         /// Returns true if a file with the given name exists anywhere under solutionRoot.
-        /// Used to forgive truncated paths like "ChatSessionStream\StreamProcessor.cs"
-        /// when the real file is "LMLocal\Application\ChatSessionStream\StreamProcessor.cs".
         /// </summary>
         private static bool FileExistsByName(string solutionRoot, string fileName)
         {
@@ -558,9 +674,7 @@ namespace LMLocal.Tests.E2E.VSIX
 
         /// <summary>
         /// Returns true if a file with the same directory + base name exists in the
-        /// solution but with a different extension (e.g. "LMLocal\\LMLocal.cs" -> the
-        /// real "LMLocal\\LMLocal.csproj"). This forgives regex false positives where
-        /// ".cs" is matched as a substring of ".csproj".
+        /// solution but with a different extension (e.g. "LMLocal\\LMLocal.cs" -> the real "LMLocal\\LMLocal.csproj"). 
         /// </summary>
         private static bool HasRealFileWithDifferentExtension(string solutionRoot, string path, string realExtension)
         {
@@ -581,9 +695,7 @@ namespace LMLocal.Tests.E2E.VSIX
             return resolvedDir != null && File.Exists(Path.Combine(resolvedDir, candidate));
         }
 
-        // Only paths with a directory separator are cross-checked. A bare file name
-        // ("X.cs") is too often a false positive, and we still catch the dangerous case:
-        // an agent quoting a full/relative path that does not exist.
+        // Only paths with a directory separator are cross-checked.
         private static List<string> ExtractPaths(string content)
         {
             if (string.IsNullOrWhiteSpace(content)) return new List<string>();

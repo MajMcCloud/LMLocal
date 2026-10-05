@@ -35,7 +35,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Reads a specific line range from a file and returns the raw text content. Lines are 1-indexed. If the requested end_line exceeds the total number of lines, the tool returns all available lines from start_line to the end of the file. The response includes the actual start_line and end_line read, plus a 'has_more_results' flag indicating whether there are more lines beyond the returned range. Use this tool to inspect a fragment of a file without loading the entire content, or to visually confirm a fact (e.g. a class declaration) that a content search did not conclusively return. If you don't know the exact line number, start with a reasonable line range (e.g. 1-100), and if 'has_more_results' is true and you still haven't found what you're looking for, continue reading subsequent ranges rather than concluding the fact is absent.",
+                Description = "Reads a specific line range from a file and returns the lines as an array of strings, one element per line. Lines are 1-indexed. Every returned line is prefixed with its 1-based line number followed by ': ' — for example '31: return ExceptionFormatter.Format(ex);' — so the exact line number is explicit in each returned string. If the requested end_line exceeds the total number of lines, the tool returns all available lines from start_line to the end of the file. has_more_results=true means additional lines exist after the returned content; to continue, call the tool again for the same file starting from the next line number after the last line shown in the returned content. Only works inside the open solution directory — a path that resolves outside the solution is rejected with an explicit error. Use this tool to inspect a known file and line range without loading the entire content, or to visually confirm a fact after another tool has located it. Prefer search_file_content or symbol tools to locate unknown text, identifiers, or line numbers before using this tool.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",
@@ -66,11 +66,11 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                 if (!_pathResolver.TryResolveFilePath(filePath, solutionDir, out string absolutePath) || string.IsNullOrEmpty(absolutePath))
                     return Error($"File not found: {filePath}", filePath);
 
+                if (!_pathResolver.IsPathInsideDirectory(absolutePath, solutionDir))
+                    return Error($"File '{absolutePath}' is outside the solution directory '{solutionDir}'. Only files inside the open solution can be read.", filePath);
+
                 if (!_fileSystem.FileExists(absolutePath))
                     return Error($"File not found: {absolutePath}", filePath);
-
-                if (!_pathResolver.IsPathInsideDirectory(absolutePath, solutionDir))
-                    return Error($"File '{absolutePath}' is outside the solution directory '{solutionDir}'.", filePath);
 
                 if (!_pathResolver.TryGetRelativePath(absolutePath, solutionDir, out string relativePath))
                     relativePath = absolutePath;
@@ -83,29 +83,11 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                 if (hasMore && lines.Count > 0)
                     lines.RemoveAt(lines.Count - 1);
 
-                if (lines.Count == 0)
-                {
-                    return new FileLinesResponse
-                    {
-                        Success = true,
-                        FilePath = relativePath,
-                        StartLine = startLine,
-                        EndLine = startLine - 1,
-                        Content = string.Empty,
-                        HasMoreResults = false
-                    };
-                }
-
-                string content = string.Join(Environment.NewLine, lines);
-                int actualEndLine = startLine + lines.Count - 1;
-
                 return new FileLinesResponse
                 {
                     Success = true,
                     FilePath = relativePath,
-                    StartLine = startLine,
-                    EndLine = actualEndLine,
-                    Content = content,
+                    Content = NumberLines(lines, startLine),
                     HasMoreResults = hasMore
                 };
             }
@@ -117,8 +99,6 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                     ErrorMessage = ex.Message,
                     FilePath = parameters?.TryGetValue("file_path", out var fp) == true ? fp?.ToString() : "",
                     Content = null,
-                    StartLine = 0,
-                    EndLine = 0,
                     HasMoreResults = false
                 };
             }
@@ -138,13 +118,32 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
         {
             if (result is FileLinesResponse fileResult)
             {
-                var total = fileResult.EndLine - fileResult.StartLine + 1;
-                return fileResult.Success
-                    ? total > 0 ? $"Read {total} {Pluralizer.Pluralize(total, "line", "lines")}." : "No lines found."
-                    : $"Read lines failed: {fileResult.ErrorMessage}";
+                if (!fileResult.Success)
+                    return $"Read lines failed: {fileResult.ErrorMessage}";
+
+                var total = fileResult.Content?.Count ?? 0;
+                return total > 0
+                    ? $"Read {total} {Pluralizer.Pluralize(total, "line", "lines")}."
+                    : "No lines found.";
             }
 
             return "Reading lines finished.";
+        }
+
+        /// <summary>
+        /// Prefixes each line with its 1-based line number (e.g. "31: return x;") so the caller sees an explicit, unambiguous number for every returned line.
+        /// </summary>
+        private static List<string> NumberLines(List<string> lines, int startLine)
+        {
+            var result = new List<string>(lines?.Count ?? 0);
+            if (lines == null)
+                return result;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                result.Add(startLine + i + ": " + lines[i]);
+            }
+            return result;
         }
 
         private (string filePath, int startLine, int endLine, string error) ExtractAndValidateParameters(
@@ -184,8 +183,6 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                 ErrorMessage = message,
                 FilePath = filePath,
                 Content = null,
-                StartLine = 0,
-                EndLine = 0,
                 HasMoreResults = false
             };
         }
@@ -195,14 +192,8 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             [JsonProperty("file_path")]
             public string FilePath { get; set; }
 
-            [JsonProperty("start_line")]
-            public int StartLine { get; set; }
-
-            [JsonProperty("end_line")]
-            public int EndLine { get; set; }
-
             [JsonProperty("content")]
-            public string Content { get; set; }
+            public List<string> Content { get; set; }
 
             [JsonProperty("has_more_results")]
             public bool HasMoreResults { get; set; }

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using LMLocal.Application.Chat;
 using LMLocal.Application.ChatSession;
 using LMLocal.Application.ChatSessionStream;
+using LMLocal.Application.SubAgents;
 using LMLocal.Application.Tool;
 using LMLocal.Core.Models;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Snapshot;
@@ -23,6 +24,8 @@ namespace LMLocal.Tests.Unit.Internal
         private Mock<IHistoryCompactor> _compactorMock;
         private Mock<ISnapshotManager> _snapshotManagerMock;
         private Mock<IToolCallLoopDetector> _loopDetectorMock;
+        private Mock<ISubAgentsParallelPolicy> _parallelPolicyMock;
+        private Mock<ISubAgentsParallelRunner> _parallelRunnerMock;
 
         [SetUp]
         public void SetUp()
@@ -32,6 +35,20 @@ namespace LMLocal.Tests.Unit.Internal
             _compactorMock = new Mock<IHistoryCompactor>();
             _snapshotManagerMock = new Mock<ISnapshotManager>();
             _loopDetectorMock = new Mock<IToolCallLoopDetector>();
+            _parallelPolicyMock = new Mock<ISubAgentsParallelPolicy>();
+            _parallelRunnerMock = new Mock<ISubAgentsParallelRunner>();
+        }
+
+        private ChatSessionOrchestrator CreateOrchestrator()
+        {
+            return new ChatSessionOrchestrator(
+                _chatServiceMock.Object,
+                _toolManagerMock.Object,
+                _compactorMock.Object,
+                _snapshotManagerMock.Object,
+                _loopDetectorMock.Object,
+                _parallelPolicyMock.Object,
+                _parallelRunnerMock.Object);
         }
 
         // Arrange-Act-Assert: successful generation path without tools -> sends complete and compaction messages
@@ -61,7 +78,7 @@ namespace LMLocal.Tests.Unit.Internal
             _compactorMock.Setup(c => c.NeedsCompaction()).Returns(true);
             _compactorMock.Setup(c => c.CompactIfNeededAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-            var orchestrator = new ChatSessionOrchestrator(_chatServiceMock.Object, _toolManagerMock.Object, _compactorMock.Object, _snapshotManagerMock.Object, _loopDetectorMock.Object);
+            var orchestrator = CreateOrchestrator();
 
             async Task OnMessage(WebView2ScriptMessage msg)
             {
@@ -112,7 +129,7 @@ namespace LMLocal.Tests.Unit.Internal
                 }
             });
 
-            var orchestrator = new ChatSessionOrchestrator(_chatServiceMock.Object, _toolManagerMock.Object, _compactorMock.Object, _snapshotManagerMock.Object, _loopDetectorMock.Object);
+            var orchestrator = CreateOrchestrator();
 
             async Task OnMessage(WebView2ScriptMessage msg)
             {
@@ -158,7 +175,7 @@ namespace LMLocal.Tests.Unit.Internal
                 }
             });
 
-            var orchestrator = new ChatSessionOrchestrator(_chatServiceMock.Object, _toolManagerMock.Object, _compactorMock.Object, _snapshotManagerMock.Object, _loopDetectorMock.Object);
+            var orchestrator = CreateOrchestrator();
 
             async Task OnMessage(WebView2ScriptMessage msg)
             {
@@ -213,7 +230,7 @@ namespace LMLocal.Tests.Unit.Internal
             _compactorMock.Setup(c => c.NeedsCompaction()).Returns(true);
             _compactorMock.Setup(c => c.CompactIfNeededAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-            var orchestrator = new ChatSessionOrchestrator(_chatServiceMock.Object, _toolManagerMock.Object, _compactorMock.Object, _snapshotManagerMock.Object, _loopDetectorMock.Object);
+            var orchestrator = CreateOrchestrator();
 
             async Task OnMessage(WebView2ScriptMessage msg)
             {

@@ -1,5 +1,5 @@
 ﻿import { formatTokenStats } from '@app/lib/token.stats.js';
-import { startTooling as startToolStatus, stepTooling as stepToolStatus, finishTooling as finishToolStatus } from '@app/chat/tool.status.js';
+import { startTooling as startToolStatus, stepTooling as stepToolStatus, finishTooling as finishToolStatus, updateToolGroup as updateToolGroupStatus } from '@app/chat/tool.status.js';
 
 /**
  * Factory that creates a collapsible AI message DOM element with multi-step support.
@@ -200,6 +200,10 @@ export function createAiCollapsibleMessage(container, highlightWorkerClient, cur
 
         finishTooling: (callId, withError, message) => {
             finishToolStatus(elements.toolContainer, callId, withError, message);
+        },
+
+        updateToolGroup: (groupId, completed, total) => {
+            updateToolGroupStatus(elements.toolContainer, groupId, completed, total);
         },
 
         stopStreaming: (message) => {

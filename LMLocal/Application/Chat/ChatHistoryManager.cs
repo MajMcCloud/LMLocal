@@ -71,12 +71,12 @@ namespace LMLocal.Application.Chat
         void SetPendingAssistant(string content, IReadOnlyList<ToolCallRecord> toolCalls);
 
         /// <summary>
-        /// Clears history and starts a new session, carrying over the last user message and the full assistant response (including tool calls/results) that followed it.
+        /// Clears history and starts a new session, carrying over the last completed step 1:1 (user message + assistant reply with text + tool calls/results in between).
         /// </summary>
         Task MoveLastExchangeToNewSessionAsync();
 
         /// <summary>
-        /// Clears history and starts a new session, consolidating the last exchange.
+        /// Clears history and starts a new session, consolidating the last completed step into a clean user/assistant pair.
         /// </summary>
         Task ConsolidateLastExchangeAsync();
 
@@ -103,6 +103,7 @@ namespace LMLocal.Application.Chat
         private readonly IChatPersistenceService _persistence;
         private readonly ISettingsManager _settingsManager;
         private readonly IToolResultMarkdownFormatter _formatter;
+        private const int LookbackLimit = 800;
 
         private List<ChatMessage> _cachedNormalized;
         private int _lastCheckedVersion = 0;
@@ -331,37 +332,18 @@ namespace LMLocal.Application.Chat
         }
 
         /// <summary>
-        /// Clears history and starts a new session, carrying over the last user message and the assistant response that followed it.
+        /// Clears history and starts a new session, carrying over the last completed step 1:1.
         /// </summary>
         public async Task MoveLastExchangeToNewSessionAsync()
         {
-            const int lookbackLimit = 800;
-
-            List<ChatMessage> historyFragment;
+            List<ChatMessage> historyFragment = null;
             lock (_lock)
             {
                 if (_history.Count == 0)
                     return;
 
-                int startIdx = Math.Max(0, _history.Count - lookbackLimit);
-                int lastUserIdx = -1;
-                bool seenAssistant = false;
-                for (int i = _history.Count - 1; i >= startIdx; i--)
-                {
-                    if (_history[i].Role == "assistant")
-                    {
-                        seenAssistant = true;
-                    }
-                    else if (_history[i].Role == "user")
-                    {
-                        lastUserIdx = i;
-                        break;
-                    }
-                }
-
-                historyFragment = lastUserIdx != -1 && seenAssistant
-                    ? _history.Skip(lastUserIdx).ToList()
-                    : null;
+                if (TryFindLastTextAnswerStep(LookbackLimit, out var start, out var end))
+                    historyFragment = _history.GetRange(start, end - start + 1);
             }
 
             ClearInMemory();
@@ -380,108 +362,71 @@ namespace LMLocal.Application.Chat
         }
 
         /// <summary>
-        /// Clears history and starts a new session, consolidating the last exchange into a clean user/assistant pair.
+        /// Clears history and starts a new session, consolidating the last completed step into a clean user/assistant pair.
         /// </summary>
         public async Task ConsolidateLastExchangeAsync()
         {
-            const int lookbackLimit = 800;
             var allowedTools = new HashSet<string>
             {
                 "read_file_lines", "get_solution_overview", "get_active_document"
             };
 
-            List<ChatMessage> consolidatedFragment;
+            List<ChatMessage> consolidatedFragment = null;
             lock (_lock)
             {
                 if (_history.Count == 0)
                     return;
 
-                int startIdx = Math.Max(0, _history.Count - lookbackLimit);
-                int lastUserIdx = -1;
-                bool seenAssistant = false;
-                for (int i = _history.Count - 1; i >= startIdx; i--)
+                if (TryFindLastTextAnswerStep(LookbackLimit, out var start, out var end))
                 {
-                    if (_history[i].Role == "assistant")
-                    {
-                        seenAssistant = true;
-                    }
-                    else if (_history[i].Role == "user")
-                    {
-                        lastUserIdx = i;
-                        break;
-                    }
-                }
-
-                if (lastUserIdx == -1 || !seenAssistant)
-                {
-                    consolidatedFragment = null;
-                }
-                else
-                {
-                    var fragment = _history.Skip(lastUserIdx).ToList();
+                    var fragment = _history.GetRange(start, end - start + 1);
 
                     var userMessage = fragment[0];
+                    var finalAssistant = fragment[fragment.Count - 1];
 
-                    int finalAssistantIdx = -1;
-                    for (int i = fragment.Count - 1; i >= 1; i--)
+                    var toolCallFuncMap = new Dictionary<string, string>();
+                    var toolResults = new List<(string FunctionName, string Json)>();
+
+                    for (int i = 1; i < fragment.Count - 1; i++)
                     {
-                        if (fragment[i].Role == "assistant")
+                        var msg = fragment[i];
+
+                        if (msg.Role == "assistant" && msg.ToolCalls is List<ToolCall> calls)
                         {
-                            finalAssistantIdx = i;
-                            break;
+                            foreach (var call in calls)
+                            {
+                                if (call?.Function != null && allowedTools.Contains(call.Function.Name))
+                                    toolCallFuncMap[call.Id] = call.Function.Name;
+                            }
+                        }
+                        else if (msg.Role == "tool"
+                                 && msg.Content is string content
+                                 && !string.IsNullOrEmpty(content)
+                                 && msg.ToolCallId != null
+                                 && toolCallFuncMap.TryGetValue(msg.ToolCallId, out var funcName))
+                        {
+                            toolResults.Add((funcName, content));
                         }
                     }
 
-                    if (finalAssistantIdx == -1)
+                    var originalContent = ContentTextExtractor.ExtractTextContent(userMessage.Content);
+                    string consolidatedUserContent;
+
+                    if (toolResults.Count > 0 && _formatter != null)
                     {
-                        consolidatedFragment = null;
+                        var formattedTools = _formatter.FormatToolResults(toolResults);
+                        consolidatedUserContent = originalContent + "\n\n---\n\n" + formattedTools;
                     }
                     else
                     {
-                        var toolCallFuncMap = new Dictionary<string, string>();
-                        var toolResults = new List<(string FunctionName, string Json)>();
-
-                        for (int i = 1; i < finalAssistantIdx; i++)
-                        {
-                            var msg = fragment[i];
-
-                            if (msg.Role == "assistant" && msg.ToolCalls is List<ToolCall> calls)
-                            {
-                                foreach (var call in calls)
-                                {
-                                    if (call?.Function != null && allowedTools.Contains(call.Function.Name))
-                                        toolCallFuncMap[call.Id] = call.Function.Name;
-                                }
-                            }
-                            else if (msg.Role == "tool"
-                                     && msg.Content is string content
-                                     && !string.IsNullOrEmpty(content)
-                                     && msg.ToolCallId != null
-                                     && toolCallFuncMap.TryGetValue(msg.ToolCallId, out var funcName))
-                            {
-                                toolResults.Add((funcName, content));
-                            }
-                        }
-
-                        var originalContent = ContentTextExtractor.ExtractTextContent(userMessage.Content);
-                        string consolidatedUserContent;
-
-                        if (toolResults.Count > 0 && _formatter != null)
-                        {
-                            var formattedTools = _formatter.FormatToolResults(toolResults);
-                            consolidatedUserContent = originalContent + "\n\n---\n\n" + formattedTools;
-                        }
-                        else
-                        {
-                            consolidatedUserContent = originalContent;
-                        }
-
-                        consolidatedFragment = new List<ChatMessage>
-                        {
-                            new ChatMessage("user", consolidatedUserContent),
-                            fragment[finalAssistantIdx]
-                        };
+                        consolidatedUserContent = originalContent;
                     }
+
+                    consolidatedFragment = new List<ChatMessage>
+                    {
+                        new ChatMessage("user", consolidatedUserContent),
+                        finalAssistant
+                    };
                 }
             }
 
@@ -499,6 +444,40 @@ namespace LMLocal.Application.Chat
                 await _persistence.SaveMessagesAsync(consolidatedFragment, CancellationToken.None).ConfigureAwait(false);
             }
         }
+
+        /// <summary>
+        /// Finds the last completed step in the trailing messages.
+        /// </summary>
+        private bool TryFindLastTextAnswerStep(int lookbackLimit, out int start, out int end)
+        {
+            start = -1;
+            end = -1;
+
+            int from = Math.Max(0, _history.Count - lookbackLimit);
+            for (int i = _history.Count - 1; i >= from; i--)
+            {
+                var msg = _history[i];
+
+                if (end == -1 && msg.Role == "assistant" && HasText(msg))
+                {
+                    end = i;
+                    continue;
+                }
+
+                if (msg.Role == "user" && end != -1)
+                {
+                    start = i;
+                    break;
+                }
+            }
+
+            return start != -1 && end != -1;
+        }
+
+        /// <summary>
+        /// Returns true when the message carries visible text (plain string or text content parts).
+        /// </summary>
+        private static bool HasText(ChatMessage m) => !string.IsNullOrWhiteSpace(ContentTextExtractor.ExtractTextContent(m.Content));
 
         /// <summary>
         /// Returns a snapshot copy of the current in-memory history.
