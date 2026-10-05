@@ -156,7 +156,7 @@ namespace LMLocal.Commands
             {
                 try
                 {
-                    await CodeCommandHelper.InjectIntoChatAsync(_package, markdown);
+                    await ChatInjectionService.Instance.InjectPromptAsync(markdown);
                 }
                 catch (Exception ex)
                 {

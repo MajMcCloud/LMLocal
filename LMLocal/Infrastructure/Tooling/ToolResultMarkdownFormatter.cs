@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using LMLocal.Application.SubAgents.ReadRefs;
 using LMLocal.Core.Common;
 using Newtonsoft.Json.Linq;
 
@@ -63,22 +64,40 @@ namespace LMLocal.Infrastructure.Tooling
         private static void FormatFileReadResult(System.Text.StringBuilder sb, JObject obj)
         {
             var filePath = obj["file_path"]?.Value<string>() ?? "unknown";
-            var content = obj["content"] is JArray lines
-                ? string.Join("\n", lines.Select(line => line?.ToString() ?? ""))
-                : obj["content"]?.Value<string>() ?? "";
+            var lines = ExtractNumberedLines(obj["content"]);
             var hasMore = obj["has_more_results"]?.Value<bool>() == true;
 
-            var lang = MarkdownLanguageHelper.GetLanguageFromExtension(filePath);
+            FileContentRenderer.AppendFileBlock(sb, filePath, lines, hasMore);
+        }
 
-            sb.Append($"**`{filePath}`**");
-            if (hasMore)
-                sb.Append(" *(truncated, more lines available)*");
-            sb.AppendLine();
-            sb.AppendLine();
-            sb.AppendLine($"````{lang}");
-            sb.AppendLine(content);
-            sb.AppendLine("````");
-            sb.AppendLine();
+        /// <summary>
+        /// Normalizes the raw content token into <see cref="NumberedLine"/> items so it can be rendered by the shared <see cref="FileContentRenderer"/>.
+        /// </summary>
+        private static List<NumberedLine> ExtractNumberedLines(JToken contentToken)
+        {
+            var result = new List<NumberedLine>();
+
+            if (!(contentToken is JArray lines))
+            {
+                result.Add(new NumberedLine(0, contentToken?.Value<string>() ?? ""));
+                return result;
+            }
+
+            foreach (var line in lines)
+            {
+                if (line is JObject entry)
+                {
+                    var number = entry["line_number"]?.Value<int>() ?? 0;
+                    var text = entry["text"]?.Value<string>() ?? "";
+                    result.Add(new NumberedLine(number, text));
+                }
+                else
+                {
+                    result.Add(new NumberedLine(0, line?.ToString() ?? ""));
+                }
+            }
+
+            return result;
         }
 
         private static void FormatActiveDocumentResult(System.Text.StringBuilder sb, JObject obj)

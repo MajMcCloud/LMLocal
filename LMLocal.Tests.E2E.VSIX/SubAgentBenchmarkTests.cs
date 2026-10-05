@@ -89,6 +89,8 @@ namespace LMLocal.Tests.E2E.VSIX
             public double TokensPerSecond { get; set; }
             public int Rounds { get; set; }
             public List<string> ToolsUsed { get; set; }
+            public int ExpandedRefCount { get; set; }
+            public int UnresolvedRefCount { get; set; }
         }
 
         // ---------------------------------------------------------------------
@@ -217,23 +219,43 @@ namespace LMLocal.Tests.E2E.VSIX
                 "Reader-Start", "Reader-End"));
 
             var a211 = ScVerbatim("A2.11", Reader,
-                "In LMLocal\\Infrastructure\\Security\\TestConnectionErrorClassifier.cs return VERBATIM only the single line that contains ExceptionFormatter.Format, prefixed with its correct 1-based line number. Return no other line of the file and do not mark the file as missing.",
-                "ExceptionFormatter.Format(ex)", "32:");
+                "In LMLocal\\Infrastructure\\Security\\TestConnectionErrorClassifier.cs return VERBATIM only the single line that contains ExceptionFormatter.Format. Return no other line of the file and do not mark the file as missing.",
+                "return ExceptionFormatter.Format(ex);");
             a211.MustNotContain = new[] { "Missing files" };
             list.Add(a211);
 
             var a212 = ScVerbatim("A2.12", Reader,
-                "In LMLocal\\Application\\ModelsList\\ModelsListService.cs return VERBATIM only the two lines that contain ExceptionFormatter.Format, each prefixed with its correct 1-based line number. Return no other line of the file and do not mark the file as missing.",
-                "ExceptionFormatter.Format(ex)", "73:", "229:");
+                "In LMLocal\\Application\\ModelsList\\ModelsListService.cs return VERBATIM only the two lines that contain ExceptionFormatter.Format. Return no other line of the file and do not mark the file as missing.",
+                "var errorResponse = new UnifiedListModelsResponse { Error = ExceptionFormatter.Format(ex) };",
+                "return new UnifiedListModelsResponse { Error = ExceptionFormatter.Format(ex) };");
             a212.MustNotContain = new[] { "Missing files" };
             list.Add(a212);
 
             var a213 = ScVerbatim("A2.13", Reader,
-                "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-ranges-fixture.md and return ONLY lines 11-15 and lines 30-39 VERBATIM, each line prefixed with its actual 1-based line number. Do not include any other line of the file, do not substitute different ranges, and do not mark the file as missing.",
+                "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-ranges-fixture.md and return ONLY lines 11-15 and lines 30-39 VERBATIM, with each line carrying its actual 1-based line number. Do not include any other line of the file, do not substitute different ranges, and do not mark the file as missing.",
                 "RANGE-ANCHOR-A1-OPEN", "RANGE-ANCHOR-A1-CLOSE", "RANGE-ANCHOR-A3-CLOSE", "RANGE-ANCHOR-APP-OPEN");
             a213.MustContainInOrder = new[] { "RANGE-ANCHOR-A1-OPEN", "RANGE-ANCHOR-A1-CLOSE", "RANGE-ANCHOR-A3-CLOSE", "RANGE-ANCHOR-APP-OPEN" };
             a213.MustNotContain = new[] { "RANGE-ANCHOR-A2-OPEN", "RANGE-ANCHOR-A2-CLOSE", "RANGE-ANCHOR-A3-OPEN", "RANGE-ANCHOR-APP-CLOSE", "RANGE-ANCHOR-TAIL-OPEN", "RANGE-ANCHOR-A1-OPEN-COPY", "RANGE-ANCHOR-A1-CLOSE-COPY", "# End of fixture" };
             list.Add(a213);
+
+            var a214 = ScVerbatim("A2.14", Reader,
+                "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-symbols-fixture.md and return it verbatim, with each line carrying its 1-based line number. Preserve every character exactly — multiple spaces, tabs, single and double quotes, and every bracket. Do not normalize, drop, or rebalance any of them.",
+                "SYM-SPACE-MID: two  spaces  between  words",
+                "SYM-QUOTE-NESTED-SINGLE: 'outer \"inner\" value'",
+                "SYM-QUOTE-AT-END: trailing quote\"",
+                "SYM-PAREN-OPEN: function(",
+                "SYM-PAREN-BALANCED: ((a, b), [c, d], {e: f})",
+                "SYM-BRACKET-MIXED: {[(\"a\", {\"b\": [1,2]})]}",
+                "SYM-EMPTY-AFTER: this line follows the empty line above",
+                "SYM-END-TAIL: last line anchor");
+
+            a214.MustNotContain = new[]
+            {
+                "SYM-EMPTY-UNWANTED",
+                "//SECTION-SKIP",
+                "///"
+            };
+            list.Add(a214);
 
             //----A.3 symbol_analyzer_subagent: symbols & references(9)------ -
             list.Add(Sc("A3.1", Analyzer,
@@ -277,19 +299,29 @@ namespace LMLocal.Tests.E2E.VSIX
                 "AddAssistantMessage", "toolCallObjects", "normalizedArguments"));
 
 
+
+
             return list;
         }
 
         // ---------------------------------------------------------------------
         // Main run
         // ---------------------------------------------------------------------
+        public static IEnumerable<object[]> GetIterations()
+        {
+            const int from = 1;
+            const int to = 1;
+            return Enumerable.Range(from, to - from + 1).Select(i => new object[] { i });
+        }
 
         [TestMethod]
-        //[Retry(10)]
-        //[Ignore("Disable to run benchmark")]
-        public async Task Run_Full_Benchmark()
+        [DynamicData(nameof(GetIterations))]
+        [Ignore("Disable to run benchmark")]
+        public async Task Run_Full_Benchmark(int iteration)
         {
             // Requires a running LM Studio + an Experimental VS instance; never auto-run.
+            if (iteration != 1)
+                await Task.Delay(TimeSpan.FromSeconds(3));
 
             using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(180)))
             {

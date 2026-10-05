@@ -35,7 +35,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Reads a specific line range from a file and returns the lines as an array of strings, one element per line. Lines are 1-indexed. Every returned line is prefixed with its 1-based line number followed by ': ' — for example '31: return ExceptionFormatter.Format(ex);' — so the exact line number is explicit in each returned string. If the requested end_line exceeds the total number of lines, the tool returns all available lines from start_line to the end of the file. has_more_results=true means additional lines exist after the returned content; to continue, call the tool again for the same file starting from the next line number after the last line shown in the returned content. Only works inside the open solution directory — a path that resolves outside the solution is rejected with an explicit error. Use this tool to inspect a known file and line range without loading the entire content, or to visually confirm a fact after another tool has located it. Prefer search_file_content or symbol tools to locate unknown text, identifiers, or line numbers before using this tool.",
+                Description = "Reads a specific line range from a file and returns the lines as an array of objects, one per line. Each object has 'line_number' (the 1-based line number) and 'text' (the exact raw source text of that line, with no line-number prefix and no trailing newline). A blank line is returned as an object with its line_number set and text equal to an empty string. If the requested end_line exceeds the total number of lines, the tool returns all available lines from start_line to the end of the file. has_more_results=true means additional lines exist after the returned content; to continue, call the tool again for the same file starting from the next line number after the last line shown in the returned content. Only works inside the open solution directory — a path that resolves outside the solution is rejected with an explicit error. Use this tool to inspect a known file and line range without loading the entire content, or to visually confirm a fact after another tool has located it. Prefer search_file_content or symbol tools to locate unknown text, identifiers, or line numbers before using this tool.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",
@@ -87,6 +87,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                 {
                     Success = true,
                     FilePath = relativePath,
+                    AbsolutePath = absolutePath,
                     Content = NumberLines(lines, startLine),
                     HasMoreResults = hasMore
                 };
@@ -131,17 +132,21 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
         }
 
         /// <summary>
-        /// Prefixes each line with its 1-based line number (e.g. "31: return x;") so the caller sees an explicit, unambiguous number for every returned line.
+        /// Maps each raw line to a <see cref="FileLineEntry"/> carrying its 1-based line number and the exact raw line text (no prefix, no trailing newline).
         /// </summary>
-        private static List<string> NumberLines(List<string> lines, int startLine)
+        private static List<FileLineEntry> NumberLines(List<string> lines, int startLine)
         {
-            var result = new List<string>(lines?.Count ?? 0);
+            var result = new List<FileLineEntry>(lines?.Count ?? 0);
             if (lines == null)
                 return result;
 
             for (int i = 0; i < lines.Count; i++)
             {
-                result.Add(startLine + i + ": " + lines[i]);
+                result.Add(new FileLineEntry
+                {
+                    LineNumber = startLine + i,
+                    Text = lines[i] ?? string.Empty
+                });
             }
             return result;
         }
@@ -193,7 +198,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             public string FilePath { get; set; }
 
             [JsonProperty("content")]
-            public List<string> Content { get; set; }
+            public List<FileLineEntry> Content { get; set; }
 
             [JsonProperty("has_more_results")]
             public bool HasMoreResults { get; set; }
@@ -203,6 +208,21 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
 
             [JsonProperty("error_message", NullValueHandling = NullValueHandling.Ignore)]
             public string ErrorMessage { get; set; }
+
+            /// <summary>
+            /// Absolute on-disk path of the file that was read.
+            /// </summary>
+            [JsonIgnore]
+            public string AbsolutePath { get; set; }
+        }
+
+        public class FileLineEntry
+        {
+            [JsonProperty("line_number")]
+            public int LineNumber { get; set; }
+
+            [JsonProperty("text")]
+            public string Text { get; set; }
         }
     }
 }

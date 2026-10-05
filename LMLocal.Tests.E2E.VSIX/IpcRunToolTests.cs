@@ -68,17 +68,21 @@ namespace LMLocal.Tests.E2E.VSIX
                         Assert.IsTrue((bool)obj["success"], "create_file should succeed: " + resp);
                         Assert.IsTrue(File.Exists(path), "created file should exist on disk");
 
-                        // read back: the tool returns every line prefixed with its 1-based number.
+                        // read back: each returned entry has explicit line_number and text fields.
                         resp = await SendAsync(client, $"RunTool|read_file_lines|{UriEnc(rel)}|1|10", cts.Token);
                         obj = JObject.Parse(resp);
                         var lines = obj["content"] as JArray;
                         Assert.IsNotNull(lines, "'content' should be an array");
                         Assert.IsGreaterThanOrEqualTo(3, lines.Count, "expected at least the 3 written lines, got: " + lines.Count);
 
-                        var joined = string.Join("\n", lines.Select(l => l?.ToString()));
-                        Assert.Contains("1: line1", joined, "line 1 should be present with its prefix. Got: " + joined);
-                        Assert.Contains("2: line2", joined, "line 2 should be present with its prefix. Got: " + joined);
-                        Assert.Contains("3: line3", joined, "line 3 should be present with its prefix. Got: " + joined);
+                        var entries = lines.OfType<JObject>().ToList();
+                        Assert.IsGreaterThanOrEqualTo(3, entries.Count, "expected at least 3 line objects");
+                        Assert.AreEqual(1, entries[0]["line_number"].Value<int>());
+                        Assert.AreEqual("line1", entries[0]["text"].Value<string>());
+                        Assert.AreEqual(2, entries[1]["line_number"].Value<int>());
+                        Assert.AreEqual("line2", entries[1]["text"].Value<string>());
+                        Assert.AreEqual(3, entries[2]["line_number"].Value<int>());
+                        Assert.AreEqual("line3", entries[2]["text"].Value<string>());
 
                         // delete_file
                         resp = await SendAsync(client, $"RunTool|delete_file|{UriEnc(rel)}", cts.Token);
@@ -434,5 +438,6 @@ namespace LMLocal.Tests.E2E.VSIX
         }
 
         public TestContext TestContext { get; set; }
+
     }
 }

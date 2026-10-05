@@ -74,7 +74,7 @@ namespace LMLocal.Commands
 
             _ = _package.JoinableTaskFactory.RunAsync(async () =>
             {
-                await CodeCommandHelper.InjectIntoChatAsync(_package, markdownText);
+                await ChatInjectionService.Instance.InjectPromptAsync(markdownText);
             });
         }
     }

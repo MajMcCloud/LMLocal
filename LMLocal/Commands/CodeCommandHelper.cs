@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using EnvDTE;
 using LMLocal.Core.Common;
 using Microsoft.VisualStudio.Shell;
@@ -129,45 +128,6 @@ namespace LMLocal.Commands
                 return null;
 
             return MarkdownCodeBlockFormatter.FormatFileAsMarkdown(content, filePath, relativePath);
-        }
-
-        /// <summary>
-        /// Finds or creates the MainWindow tool window and shows it.
-        /// </summary>
-        public static async Task<MainWindow> FindAndShowMainWindowAsync(AsyncPackage package)
-        {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-            ToolWindowPane window = package.FindToolWindow(typeof(MainWindow), 0, false)
-                                ?? package.FindToolWindow(typeof(MainWindow), 0, true);
-
-            if (window?.Frame is IVsWindowFrame frame)
-                _ = frame.Show();
-
-            return window as MainWindow;
-        }
-
-        /// <summary>
-        /// Finds (or creates) the MainWindow, shows it, and injects markdown text.
-        /// </summary>
-        public static async Task InjectIntoChatAsync(
-            AsyncPackage package,
-            string markdownText,
-            bool autoSend = false,
-            string instructionTabId = null)
-        {
-            var mainWindow = await FindAndShowMainWindowAsync(package);
-            if (mainWindow == null)
-                return;
-
-            if (autoSend)
-            {
-                await mainWindow.InjectAndAutoSendAsync(markdownText + "\n\n", instructionTabId);
-            }
-            else
-            {
-                await mainWindow.InjectPromptAsync(markdownText + "\n\n");
-            }
         }
     }
 }

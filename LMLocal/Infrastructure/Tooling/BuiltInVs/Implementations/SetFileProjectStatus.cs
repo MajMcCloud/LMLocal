@@ -258,7 +258,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Adds a file to a project or removes it from the project and deletes it from disk. Use this after create_file to register the new file in the project. Preferred over manually editing project XML. Works for .csproj and .vcxproj projects. Set include=false to remove the file from the project and delete it from disk. File and project must both exist.",
+                Description = "Adds an existing file to the specified .csproj or .vcxproj project. REQUIRED when a file must be registered in a project. If the task requires adding a new .cs file to a project, first use create_file if the file does not exist, then MUST use this tool to add it to the project. Do NOT manually edit the .csproj or .vcxproj XML, ItemGroup, Compile Include, or project file entries to accomplish this. This rule applies especially to legacy .csproj projects that use explicit <Compile Include=\"...\" /> entries. Use include=false only when removing the file from the project and deleting it from disk. Both file_path and project_path are required, and both files must exist.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",

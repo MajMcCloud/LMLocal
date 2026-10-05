@@ -58,7 +58,7 @@ namespace LMLocal.Application.ChatSession
         private const int MAX_TOOL_ITERATIONS = 9999;
         private const int MAX_STATE_ITERATIONS = 9999;
         private const int TOOL_EXECUTION_TIMEOUT_MS = 30000;
-        private const int MAX_DUPLICATE_TOOL_ROUNDS = 3;
+        private const int MAX_DUPLICATE_TOOL_ROUNDS = 1;
 
         private delegate Task<ChatSessionState> StateHandler(
             ChatSessionOrchestrator instance,

@@ -61,6 +61,8 @@ namespace LMLocal
             // Initialize dependency injection container early so other components can resolve services.
             await ServiceConfiguration.InitializeAsync().ConfigureAwait(false);
 
+            // Package-owned UI service (static singleton, mirrors ShowMainWindow.Instance).
+            ChatInjectionService.Initialize(this);
             //load dependencies for solution
             var vsDependencies = ServiceConfiguration.GetService<IVsDependencies>();
             await vsDependencies.InitializeAsync();
@@ -99,6 +101,7 @@ namespace LMLocal
         {
             if (disposing)
             {
+                ChatInjectionService.Reset();
                 ServiceConfiguration.Cleanup();
             }
             base.Dispose(disposing);
