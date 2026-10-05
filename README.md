@@ -309,13 +309,6 @@ The built‑in tools let the AI read, edit, build, and test your code. You contr
 **In the Built‑in Tools… dialog (list of built‑in tools):**  
 Open this from the extension's main menu. You’ll see all built‑in tools (for example, `delete_file`, `replace_file_content`). Each tool can be enabled or disabled individually. Even if the global write/modify checkbox is on, you can still turn off specific tools like `delete_file`. Use “Enable All” or “Disable All” to change many at once, then click Save.
 
-### Open edited files in editor (Beta)
-
-**Settings ? Open edited files in editor (Beta)** � disabled by default. When enabled, Visual Studio activates the file that a tool has just created or modified, so you can review the result immediately.
-
-> **Scope (Beta)**
-> This applies to **built-in LM Local tools only**. Files written by **MCP servers** or by **subagents** are **not** opened automatically.
-
 <a id="content--list-of-builtin-tools"></a>
 ### List of built‑in tools
 
@@ -330,6 +323,7 @@ Open this from the extension's main menu. You’ll see all built‑in tools (for
 | `read_file_lines` | Reads a specific range of lines. | All | – |
 | `search_file_content` | Searches for a text string (case‑insensitive) inside solution files. | All | – |
 | `search_solution_knowledge` | Searches Markdown files in predefined folders of the solution. | Markdown (.md) | Folders are configured in Settings → `Knowledge base paths`. |
+| `search_chat_history` | Searches over past chat-history sessions. | - | Requires `Save chat history` enabled. |
 | `get_active_document` | Returns the path and full text of the currently open document. | All | – |
 | `replace_file_content` | Replaces the entire content of a file with the provided text. | All | Automatic syntax check applies * |
 | `replace_file_lines` | Replaces a range of lines (by numbers) with new content. | All | Automatic syntax check applies * |
@@ -381,7 +375,7 @@ Use subagents to:
 
 To quickly test subagents without manually editing JSON:
 
-1. **Load a Fast Local Model:** Open LM Studio (or Ollama), download a lightweight model like `gemma-4-e4b`, and start the local server.
+1. **Load a Fast Local Model:** Open LM Studio (or Ollama), download a lightweight model like `google_gemma-4-e4b-it` or `gemma-4-e4b`, and start the local server.
 2. **Sync Settings:** In LMLocal, switch your active chat model to that local model, open **Sub Agents** from the main menu, and click **Use Active Model**. This sets up the root provider defaults and creates the predefined subagent configs automatically.
 3. **Switch Back & Run:** Switch your main chat back to your primary model (e.g., Claude, GPT-5, or a large local LLM), ensure subagents are enabled via the **'s'** toolbar icon, and send a task (e.g., *"Find my class in the solution"*).
 
@@ -396,7 +390,7 @@ Out of the box, LMLocal includes **4 predefined subagents** optimized for differ
 
 > **Troubleshooting & Updates:**
 > * **Schema Changes:** `subagents.json` is preserved across app updates and will not be overwritten automatically. If a new release introduces breaking schema changes, delete `subagents.json` from your config directory to let LMLocal recreate it with up-to-date defaults.
-
+> * **Note:** The default subagent prompts are specifically are optimized the `google_gemma-4-e4b-it` model.
 
 ### Configuration
 
@@ -431,7 +425,7 @@ Root-level fields (`providerType`, `customBaseUrl`, `model`, `temperature`, `tim
   ],
   "providerType": "lmstudio",
   "customBaseUrl": "http://localhost:1234",
-  "model": "google/gemma-4-e4b",
+  "model": "google_gemma-4-e4b-it",
   "temperature": 0.0,
   "reasoningEffort": "high"
 }
@@ -588,7 +582,7 @@ Context window accumulation can lead to high API costs or local performance drop
 * **Offload Context via RAG MCP Servers:** Instead of attaching whole codebases or giant documents directly to the prompt, hook up an external **RAG (Retrieval-Augmented Generation) MCP server**. This allows LM Local to fetch only the highly relevant code snippets or documentation chunks dynamically when needed. You get full project awareness while keeping your active context window lean and cheap.
 * **Use a lightweight project map (no RAG):** Create a context.md file (manually or ask the model to generate it) describing your project structure, main classes, and patterns. Attach it to the first message to give the model a "project map" without attaching the whole codebase. This saves tokens and reduces context size.
 * **Delegate heavy tasks to Subagents:** When performing extensive codebase searches or complex multi-step operations, enable **Subagents**. Instead of letting the main chat accumulate long chains of tool calls and raw file outputs (which quickly drains your context window), a subagent handles the task in its own isolated loop. It does the heavy lifting in the background and returns only a concise summary to your main conversation, keeping your primary session lean and significantly reducing token costs.
-
+* **Disable Unused Tools (Built-in & MCP):** Each active tool adds its JSON schema and prompt definitions to every API request. Turn off MCP servers or built-in tools you don't need for your current task to instantly shave off input tokens from every turn.
 
 ### ⚡ How do I maximize model speed (even with a quality drop)?
 When you just need to generate straightforward boilerplate, repetitive CRUD methods, or standard unit tests at maximum speed:
