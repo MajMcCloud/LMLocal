@@ -309,6 +309,13 @@ The built‑in tools let the AI read, edit, build, and test your code. You contr
 **In the Built‑in Tools… dialog (list of built‑in tools):**  
 Open this from the extension's main menu. You’ll see all built‑in tools (for example, `delete_file`, `replace_file_content`). Each tool can be enabled or disabled individually. Even if the global write/modify checkbox is on, you can still turn off specific tools like `delete_file`. Use “Enable All” or “Disable All” to change many at once, then click Save.
 
+### Open edited files in editor (Beta)
+
+**Settings > Open edited files in editor (Beta)** - disabled by default. When enabled, Visual Studio activates the file that a tool has just created or modified, so you can review the result immediately.
+
+> **Scope (Beta)**
+> This applies to **built-in LM Local tools only**. Files written by **MCP servers** or by **subagents** are **not** opened automatically.
+
 <a id="content--list-of-builtin-tools"></a>
 ### List of built‑in tools
 
@@ -364,7 +371,7 @@ The panel lets you:
 Use subagents to:
 
 - **Boost speed** – run them on smaller, faster models for quick retrieval or narrow-scope tasks.
-- **Cut costs** – use a cheaper (or local) model for heavy searching and reading, avoiding expensive token usage on the main model.
+- **Cut costs** – use a cheaper (or local) model for extensive searching and reading, avoiding expensive token usage on the main model.
 
 > **Note:** if a subagent uses the same model as the main chat, it will be **slower** and **consume more total tokens** (since it generates extra output). The speed/cost benefits only come from using a different, lighter model.
 
@@ -381,12 +388,14 @@ To quickly test subagents without manually editing JSON:
 
 ### Predefined Subagents
 
-Out of the box, LMLocal includes **4 predefined subagents** optimized for different code-exploration and testing tasks:
+Out of the box, LMLocal includes **6 predefined subagents** optimized for different code-exploration and testing tasks:
 
 1. **Code explorer** (`code_explorer_subagent`) — Read-only code explorer for finding files by name or content, listing directories, and general path discovery.
-2. **Code reader** (`code_reader_subagent`) — Deterministic read-only code reader designed to find and read specific files or code ranges verbatim.
+2. **Code reader** (`code_reader_subagent`) — Deterministic read-only code reader designed to read specific files or code ranges verbatim.
 3. **Symbol Analyzer** (`symbol_analyzer_subagent`) — Read-only symbol analyzer for C# and JavaScript symbols, declarations, references, and type metadata.
 4. **Build & Test** (`build_subagent`) — Agent used to build the open solution and run unit tests in Visual Studio, returning compiler errors and test failures.
+5. **Reviewer** (`reviewer_subagent`) — Final-step software architecture and code quality reviewer that performs adversarial and checklist audits to validate proposed plans and implementations before delivery.
+6. **Context Retriever** (`context_retriever_subagent`) — Retrieval agent for querying archived chat history and project knowledge base documents to recall prior decisions, plans, or architectural conventions.
 
 > **Troubleshooting & Updates:**
 > * **Schema Changes:** `subagents.json` is preserved across app updates and will not be overwritten automatically. If a new release introduces breaking schema changes, delete `subagents.json` from your config directory to let LMLocal recreate it with up-to-date defaults.
@@ -577,11 +586,11 @@ If the chat history grows too long during this multi-model review loop and you s
 ### 💰 How can I reduce token usage and lower API costs?
 Context window accumulation can lead to high API costs or local performance drops. You can optimize your budget by applying these patterns:
 
-* **The "Smart Context Collector" Tiering:** Don't waste your expensive cloud tokens on reading massive files or building initial context. Instead, start the session with a lighter, cheaper model (like *GPT-4o-mini* or a local *Ministral 3.x*) to read your code files, list directories, and pull together the initial workspace data. Once the heavy context is captured and a baseline draft is formed in the history, hot-swap to a premium OpenAI-compatible model (like *DeepSeek V4-Pro* or *GPT-5.5*) to run the high-level analysis and critical edits.
+* **The "Smart Context Collector" Tiering:** Don't waste your expensive cloud tokens on reading massive files or building initial context. Instead, start the session with a lighter, cheaper model (like *GPT-4o-mini* or a local *Ministral 3.x*) to read your code files, list directories, and pull together the initial workspace data. Once the context is captured and a baseline draft is formed in the history, hot-swap to a premium OpenAI-compatible model (like *DeepSeek* or *GPT*) to run the high-level analysis and critical edits.
 * **Choose Providers with Prompt Caching:** When working in the cloud, pick providers that natively support **Prompt Caching** (like *DeepSeek* or *OpenRouter*). Because LM Local continuously appends conversation history with each turn, prompt caching can slash your recurring token costs.
 * **Offload Context via RAG MCP Servers:** Instead of attaching whole codebases or giant documents directly to the prompt, hook up an external **RAG (Retrieval-Augmented Generation) MCP server**. This allows LM Local to fetch only the highly relevant code snippets or documentation chunks dynamically when needed. You get full project awareness while keeping your active context window lean and cheap.
 * **Use a lightweight project map (no RAG):** Create a context.md file (manually or ask the model to generate it) describing your project structure, main classes, and patterns. Attach it to the first message to give the model a "project map" without attaching the whole codebase. This saves tokens and reduces context size.
-* **Delegate heavy tasks to Subagents:** When performing extensive codebase searches or complex multi-step operations, enable **Subagents**. Instead of letting the main chat accumulate long chains of tool calls and raw file outputs (which quickly drains your context window), a subagent handles the task in its own isolated loop. It does the heavy lifting in the background and returns only a concise summary to your main conversation, keeping your primary session lean and significantly reducing token costs.
+* **Delegate tasks to Subagents:** When performing extensive codebase searches or complex multi-step operations, enable **Subagents**. Instead of letting the main chat accumulate long chains of tool calls and raw file outputs (which quickly drains your context window), a subagent handles the task in its own isolated loop. It does the work in the background and returns only a concise summary to your main conversation, keeping your primary session lean and significantly reducing token costs.
 * **Disable Unused Tools (Built-in & MCP):** Each active tool adds its JSON schema and prompt definitions to every API request. Turn off MCP servers or built-in tools you don't need for your current task to instantly shave off input tokens from every turn.
 
 ### ⚡ How do I maximize model speed (even with a quality drop)?

@@ -69,6 +69,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Application\Abstractions\Ports\IChatInjectionService.cs" />
     <Compile Include="Application\Abstractions\Ports\IInstructionDefaultsProvider.cs" />
     <Compile Include="Application\Abstractions\Ports\IInstructionsManager.cs" />
     <Compile Include="Application\Abstractions\Ports\IToolRouter.cs" />
@@ -83,6 +84,14 @@
     <Compile Include="Application\SubAgents\ISubAgentsParallelPolicy.cs" />
     <Compile Include="Application\SubAgents\ISubAgentsParallelRunner.cs" />
     <Compile Include="Application\SubAgents\ISubAgentsService.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\FileContentRenderer.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\FileRefMarker.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\LineRange.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\NumberedLine.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\ReadLedger.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\ReadRecord.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\ReadRefExpander.cs" />
+    <Compile Include="Application\SubAgents\ReadRefs\ReadResultRecorder.cs" />
     <Compile Include="Application\SubAgents\SubAgentRunRequest.cs" />
     <Compile Include="Application\SubAgents\SubAgentsParallelRunResult.cs" />
     <Compile Include="Application\SubAgents\SubAgentsRunResponse.cs" />
@@ -91,6 +100,8 @@
     <Compile Include="Application\Tool\ToolActivityEvent.cs" />
     <Compile Include="Application\Tool\ToolCallLoopDetector.cs" />
     <Compile Include="Application\Tool\ToolMessageFactory.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ToolFileOpener.cs" />
+    <Compile Include="UI\ChatInjectionService.cs" />
     <Compile Include="Commands\AddSummaryCommand.cs" />
     <Compile Include="Commands\AddUnitTestsCommand.cs" />
     <Compile Include="Commands\BaseCodeCommand.cs" />
@@ -201,7 +212,6 @@
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Testing\DotnetProcessRunner.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Testing\TestArgumentsBuilder.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Testing\TestOutputParser.cs" />
-    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ToolFileOpener.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\VsFileFilter.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\GetSymbolInfo.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\InspectType.cs" />
@@ -498,9 +508,9 @@
     <Compile Include="Application\ChatSessionStream\StreamProcessorFactory.cs" />
     <Compile Include="Infrastructure\Streaming\TokenSpeedCalculator.cs" />
     <Compile Include="Infrastructure\WebView\Messaging\WebViewScriptExecutor.cs" />
-    <Compile Include="MainWindow.cs" />
+    <Compile Include="UI\MainWindow.cs" />
     <Compile Include="Commands\MainWindowCommand.cs" />
-    <Compile Include="MainWindowControl.xaml.cs">
+    <Compile Include="UI\MainWindowControl.xaml.cs">
       <DependentUpon>MainWindowControl.xaml</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -675,7 +685,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
-    <Compile Include="ShowMainWindow.cs" />
+    <Compile Include="UI\ShowMainWindow.cs" />
     <Content Include="Resources\js\workers\marked\marked.worker.client.js">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
@@ -780,7 +790,7 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <Page Include="MainWindowControl.xaml">
+    <Page Include="UI\MainWindowControl.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

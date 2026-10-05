@@ -83,6 +83,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Application\SubAgents\FileRefMarkerTests.cs" />
+    <Compile Include="Application\SubAgents\ReadLedgerTests.cs" />
+    <Compile Include="Application\SubAgents\ReadRefExpanderTests.cs" />
+    <Compile Include="Application\SubAgents\ReadResultRecorderTests.cs" />
     <Compile Include="Application\SubAgents\SubAgentsActiveModelDefaultsTests.cs" />
     <Compile Include="Application\SubAgents\SubAgentsConfigTests.cs" />
     <Compile Include="Application\SubAgents\SubAgentsRawPersistenceTests.cs" />

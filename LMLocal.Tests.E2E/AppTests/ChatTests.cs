@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace LMLocal.Tests.E2E.AppTests;
 
 [TestFixture]
@@ -66,12 +64,23 @@ public partial class ChatTests : AppTestBase
     [Category("Chat")]
     public async Task Send_ButtonChangesToStopWhileGenerating()
     {
-        await GotoWithMockAsync("webview-mock-streaming.js");
+        // Use a mock whose stream never ends (it emits STREAMING content, then holds),
+        // so the "generating" state persists. The default streaming mock completes in
+        // ~200ms, which makes the transient "Stop"/btn-stop state a race for the
+        // auto-retrying assertions below.
+        await GotoWithMockAsync("webview-mock-persistent-streaming.js");
         await Expect(Page.Locator("#conn-status"))
             .ToHaveTextAsync("Connected", new() { Timeout = 3000 });
 
         await Page.Locator("#userInput").FillAsync("Hello");
         await Page.Locator("#mainBtn").ClickAsync();
+
+        // Confirm the app is actively streaming (not merely pre-processing), so the assertion
+        // below genuinely observes the button's "Stop" state while generation is in progress.
+        await Page.EvaluateAsync("() => { import('/js/store/app.store.js').then(m => { window.__appStore = m.default; }); }");
+        await Page.WaitForFunctionAsync(
+            "() => window.__appStore?.getState?.().status === 'STREAMING'",
+            null, new() { Timeout = 3000 });
 
         var stopBtn = Page.Locator("#mainBtn");
         await Expect(stopBtn).ToHaveTextAsync("Stop", new() { Timeout = 5000 });

@@ -7,13 +7,13 @@ using System.Threading.Tasks;
 using LMLocal.Application.Abstractions.Ports;
 using LMLocal.Application.Chat;
 using LMLocal.Application.ChatSessionStream;
+using LMLocal.Application.SubAgents.ReadRefs;
 using LMLocal.Application.Tool;
 using LMLocal.Core.Common;
 using LMLocal.Core.Exceptions;
 using LMLocal.Core.Models;
 using LMLocal.Infrastructure.LlmApi;
 using LMLocal.Infrastructure.Persistence;
-using LMLocal.Infrastructure.Tooling;
 
 namespace LMLocal.Application.SubAgents
 {
@@ -25,7 +25,7 @@ namespace LMLocal.Application.SubAgents
         private const string LogsFolderName = "SubAgentsLogs";
         private const int DefaultMaxRounds = 10;
         private const int DefaultTimeoutSeconds = 120;
-        private const int MaxDuplicateToolRounds = 3;
+        private const int MaxDuplicateToolRounds = 1;
 
         private readonly ISettingsManager _settingsManager;
         private readonly IFileSystem _fileSystem;
@@ -119,6 +119,9 @@ namespace LMLocal.Application.SubAgents
                 List<ToolResultMessage> toolResultsForRound = null;
                 bool isFirstRound = true;
                 int stepCounter = 0;
+
+                // Ref-marker state, scoped to this run (variant B: only the fact of a read is kept, never content).
+                var ledger = new ReadLedger();
 
                 using (var overallCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                 {
@@ -215,11 +218,20 @@ namespace LMLocal.Application.SubAgents
                                         .ExecuteToolAsync(toolCall, overallCts.Token, toolQueue)
                                         .ConfigureAwait(false);
 
+                                    object resultValue = string.IsNullOrEmpty(execResult.Error) ? execResult.Result : execResult.Error;
+
+                                    // Record the fact of a read (path + actually returned range) for ref expansion.
+                                    if (string.IsNullOrEmpty(execResult.Error)
+                                        && string.Equals(toolCall.FunctionName, ReadResultRecorder.ReadFileLinesToolName, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        ReadResultRecorder.TryRecord(ledger, execResult.Result);
+                                    }
+
                                     toolResults.Add(new ToolResultMessage
                                     {
                                         ToolCallId = toolCall.CallId,
                                         ToolName = toolCall.FunctionName,
-                                        Result = string.IsNullOrEmpty(execResult.Error) ? execResult.Result : execResult.Error,
+                                        Result = resultValue,
                                         Error = execResult.Error
                                     });
                                 }
@@ -234,6 +246,17 @@ namespace LMLocal.Application.SubAgents
                                 response.ToolsUsed = new List<string>(usedTools);
                                 CopyUsage(streamResult, response);
                                 response.TokensPerSecond = streamResult.TokensPerSecond;
+
+                                // No-op unless the model emitted ref markers; runs for every agent (ref emission is harmless when nothing is marked, so no per-agent gate is needed).
+                                if (ledger.Count > 0 && !string.IsNullOrEmpty(response.Content))
+                                {
+                                    var expander = new ReadRefExpander(ledger, _fileSystem);
+                                    var expanded = await expander.ExpandAsync(response.Content, overallCts.Token).ConfigureAwait(false);
+                                    response.Content = expanded.Content;
+                                    response.ExpandedRefCount = expanded.ExpandedRefCount;
+                                    response.UnresolvedRefCount = expanded.UnresolvedRefCount;
+                                }
+
                                 return response;
                         }
                     }

@@ -20,6 +20,17 @@ namespace LMLocal.Application.SubAgents
         public double TokensPerSecond { get; set; }
         public int Rounds { get; set; }
         public List<string> ToolsUsed { get; set; }
+
+        /// <summary>
+        /// Number of ref markers successfully expanded back into real file content: the ref mechanism worked.
+        /// </summary>
+        public int ExpandedRefCount { get; set; }
+
+        /// <summary>
+        /// Number of ref markers left as-is because their (path, range) was not in the run's read ledger (anti-hallucination: a range that was never read is never expanded).
+        /// </summary>
+        public int UnresolvedRefCount { get; set; }
+
         object IToolExecutionOutcome.Result => Content;
     }
 }

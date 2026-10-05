@@ -208,11 +208,11 @@ namespace LMLocal.Tests.Unit.Internal
 
         /// <summary>
         /// When the model calls the exact same tool(s) with the exact same arguments
-        /// for 3 consecutive rounds, the orchestrator should transition to Error state
-        /// and send ChatSessionError.
+        /// for 2 consecutive rounds (duplicate on the 2nd attempt), the orchestrator
+        /// should transition to Error state and send ChatSessionError.
         /// </summary>
         [Test]
-        public async Task ThreeDuplicateToolRounds_EndsWithError()
+        public async Task DuplicateToolRound_EndsWithError_OnSecondAttempt()
         {
             var messages = new List<WebView2ScriptMessage>();
 
@@ -273,10 +273,10 @@ namespace LMLocal.Tests.Unit.Internal
             await orchestrator.RunSessionAsync(context, OnMessage, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            // After 3 duplicate rounds the orchestrator should enter Error state
+            // After the 2nd identical attempt the orchestrator should enter Error state
             var errorMessages = messages.Where(m => m.Type == WebView2MessageType.ChatSessionError).ToList();
             Assert.That(errorMessages.Count, Is.EqualTo(1),
-                "Expected exactly one ChatSessionError after 3 consecutive duplicate tool rounds");
+                "Expected exactly one ChatSessionError after a duplicate tool call on the 2nd attempt");
             var errorPayload = errorMessages[0].Payload as string;
             Assert.That(errorPayload, Does.Contain("identical arguments"),
                 "Error message should mention 'identical arguments'");
@@ -374,15 +374,16 @@ namespace LMLocal.Tests.Unit.Internal
         }
 
         /// <summary>
-        /// After two duplicate rounds, a different tool call resets the counter.
-        /// Even if duplicates reappear later, counting starts from zero again.
+        /// With MAX_DUPLICATE_TOOL_ROUNDS = 1 a duplicate pair halts on the 2nd consecutive
+        /// identical call. This test verifies the reset path: the same tool + arguments that
+        /// WOULD be a loop when consecutive is interrupted by a different-argument call, so
+        /// the counter resets each time and the session completes normally.
         /// </summary>
         [Test]
-        public async Task TwoDuplicatesThenDifferentTool_ResetsCounter_CompletesNormally()
+        public async Task SameToolRepeatedButNotConsecutively_CounterResets_CompletesNormally()
         {
             var messages = new List<WebView2ScriptMessage>();
             int callCount = 0;
-            bool detectorReturnsTrue = true;
 
             _chatServiceMock.Setup(s => s.GenerateStreamAsync(
                     It.IsAny<GenerateStreamContext>(),
@@ -396,12 +397,9 @@ namespace LMLocal.Tests.Unit.Internal
                     async (gctx, toolResults, onChunk, onComplete, ct) =>
                     {
                         callCount++;
-                        if (callCount <= 5)
+                        if (callCount <= 3)
                         {
-                            // After 3 calls, switch from duplicate to different
-                            if (callCount == 4)
-                                detectorReturnsTrue = false;
-
+                            // 1: {"file":"a.txt"} -> 2: {"file":"b.txt"} -> 3: {"file":"a.txt"}
                             var result = new StreamCompletionResult
                             {
                                 WasCancelled = false,
@@ -413,9 +411,9 @@ namespace LMLocal.Tests.Unit.Internal
                                     {
                                         CallId = $"call_{callCount}",
                                         FunctionName = "read_file_lines",
-                                        ArgumentsJson = callCount <= 3
-                                            ? "{\"file\":\"same.txt\"}"
-                                            : "{\"file\":\"different.txt\"}"
+                                        ArgumentsJson = callCount == 2
+                                            ? "{\"file\":\"b.txt\"}"
+                                            : "{\"file\":\"a.txt\"}"
                                     }
                                 }
                             };
@@ -424,7 +422,7 @@ namespace LMLocal.Tests.Unit.Internal
                         }
                         else
                         {
-                            // 6th generation finishes without tools
+                            // 4th generation finishes without tools
                             var result = new StreamCompletionResult
                             {
                                 WasCancelled = false,
@@ -444,11 +442,15 @@ namespace LMLocal.Tests.Unit.Internal
                 .ReturnsAsync(new ToolExecutionResult { Result = "ok", CompletionMessage = "done" });
             _compactorMock.Setup(c => c.NeedsCompaction()).Returns(false);
 
-            // Returns true (duplicate) for first 3 comparisons, then false (different)
+            // Mirror the real detector: two calls are "same" only when tool name AND arguments match.
             _loopDetectorMock.Setup(d => d.AreSameToolCalls(
                     It.IsAny<IReadOnlyList<ToolCallRecord>>(),
                     It.IsAny<IReadOnlyList<ToolCallRecord>>()))
-                .Returns(() => detectorReturnsTrue);
+                .Returns((IReadOnlyList<ToolCallRecord> current, IReadOnlyList<ToolCallRecord> previous) =>
+                    current != null && previous != null &&
+                    current.Count == previous.Count && current.Count > 0 &&
+                    string.Equals(current[0].FunctionName, previous[0].FunctionName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(current[0].ArgumentsJson, previous[0].ArgumentsJson, StringComparison.Ordinal));
 
             var orchestrator = CreateOrchestrator();
 
@@ -463,11 +465,11 @@ namespace LMLocal.Tests.Unit.Internal
             await orchestrator.RunSessionAsync(context, OnMessage, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            // Session completes normally — counter was reset before reaching threshold
+            // "a.txt" appears twice but never consecutively -> the counter resets each round -> no loop.
             Assert.That(messages.Any(m => m.Type == WebView2MessageType.ChatSessionComplete), Is.True,
-                "Expected ChatSessionComplete when counter resets before threshold");
+                "Expected ChatSessionComplete when the identical call is not consecutive");
             Assert.That(messages.Any(m => m.Type == WebView2MessageType.ChatSessionError), Is.False,
-                "No ChatSessionError expected after counter reset");
+                "No ChatSessionError expected when calls are not consecutive duplicates");
         }
     }
 }

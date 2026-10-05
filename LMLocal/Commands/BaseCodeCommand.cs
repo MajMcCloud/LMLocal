@@ -105,11 +105,7 @@ namespace LMLocal.Commands
                 }
                 await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                await CodeCommandHelper.InjectIntoChatAsync(
-                    _package,
-                    fullPrompt,
-                    autoSend: true,
-                    instructionTabId: instructionTabId);
+                await ChatInjectionService.Instance.InjectAndAutoSendAsync(fullPrompt, instructionTabId);
             });
         }
     }

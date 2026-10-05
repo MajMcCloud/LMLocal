@@ -19,7 +19,9 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
 {
     /// <summary>
     /// Tool for retrieving navigation information about a C# symbol:
-    /// all declaration sites (definition locations) and optionally usages (references) for the first matching symbol.
+    /// all declaration sites (definition locations) of every matching symbol and optionally usages (references)
+    /// computed for one selected symbol (the first symbol declared in file_path if provided, otherwise an
+    /// exact case-sensitive name match, else the first case-insensitive match).
     /// This is a navigation tool — use inspect_type to see members, fields, properties, and dependencies.
     /// </summary>
     internal interface IGetSymbolInfo : IBuiltInTool
@@ -50,16 +52,16 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Retrieves navigation information for a C# symbol: all declaration sites (file path, line, column, full signature including parameters, modifiers, namespace) and optionally usages/references (file path, line, line text, symbol kind). Does NOT return method bodies, fields, properties, base classes, or dependencies. Case‑insensitive, supports overloads/partials. Use optional file_path to limit search to a specific file. References limited to 5000, paginated by page size (default 50). Lines are 1-indexed.",
+                Description = "Returns navigation info for a C# symbol. Definitions: declaration sites of every matching symbol (file, line, column, full signature with parameters, modifiers, namespace), deduplicated, up to 100; not paginated. References (default included): usages of ONE symbol (file, line, line text, symbol kind), up to 5000 total, paginated (page size default 50, max 200) via page_token. Reference target: if file_path is set, the first symbol declared in that file; otherwise the first exact case-sensitive name match, else the first case-insensitive match. For overloads/partials, definitions include all declarations, but references cover only the selected symbol. Name matching prefers exact case-sensitive matches and falls back to case-insensitive only if no exact match exists. file_path restricts only the returned definitions to that file; references are still searched across the whole solution. Does NOT return method bodies, fields, properties, base classes, or dependencies. Lines are 1-indexed.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",
                     Properties = new Dictionary<string, ToolDetails>
                     {
-                        { "symbol_name", new ToolDetails { Type = "string", Description = "The name of the symbol (case‑insensitive)." } },
-                        { "file_path", new ToolDetails { Type = "string", Description = "Limit search to a specific file (relative or absolute path). If provided, only declarations in this file are returned." } },
+                        { "symbol_name", new ToolDetails { Type = "string", Description = "The name of the symbol to look up. Exact case-sensitive matches are preferred; if none exist, case-insensitive matches are used." } },
+                        { "file_path", new ToolDetails { Type = "string", Description = "Restricts returned definitions to this file (relative or absolute path): only declaration sites in this file are returned. Also selects the reference target — usages are computed for the first symbol declared in this file. References themselves are still searched across the entire solution." } },
                         { "include_references", new ToolDetails { Type = "boolean", Description = "Whether to include usages (references). Default true." } },
-                        { "max_references", new ToolDetails { Type = "integer", Description = "Number of references per page (page size). Default 50, max 200." } },
+                        { "max_references", new ToolDetails { Type = "integer", Description = "Number of references per page (page size). Default 50, max 200. Total references never exceed 5000 regardless of page size." } },
                         { "page_token", new ToolDetails { Type = "string", Description = "Pagination token for the next page of references." } }
                     },
                     Required = new List<string> { "symbol_name" }
