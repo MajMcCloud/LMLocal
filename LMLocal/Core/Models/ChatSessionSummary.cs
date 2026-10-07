@@ -1,4 +1,4 @@
-﻿namespace LMLocal.Application.Chat
+﻿namespace LMLocal.Core.Models
 {
     /// <summary>
     /// Lightweight summary of a persisted chat session — used to populate the chat history dialog.

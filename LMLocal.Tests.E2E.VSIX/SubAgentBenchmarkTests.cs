@@ -45,6 +45,10 @@ namespace LMLocal.Tests.E2E.VSIX
             public string[] MustContainInOrder = new string[0];
             // Hard negative evidence: each string MUST NOT appear anywhere in the answer.
             public string[] MustNotContain = new string[0];
+            // Exactly-once evidence: each marker must appear exactly once in the final answer.
+            // 0 occurrences = missing; 2+ = the same content arrived twice (printed in the reply
+            // text AND expanded from a ref marker by the runner, or via overlapping markers).
+            public string[] MustAppearExactlyOnce = new string[0];
             public bool ExpectNotFound;
             public bool CheckRefusal = true;
             public TimeSpan ReadTimeout = TimeSpan.FromMinutes(5);
@@ -204,9 +208,11 @@ namespace LMLocal.Tests.E2E.VSIX
                 "Read LMLocal/Infrastructure/Persistence/ChatLogSerializer.cs. If the entire file is not returned, clearly state that it is partial and identify the missing portion.",
                 "MaxPromptLength"));
 
-            list.Add(ScVerbatim("A2.8", Reader,
+            var a208 = ScVerbatim("A2.8", Reader,
                 "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-truth-fixture.md and return it verbatim.",
-                "## 1. First Section", "## Appendix A. References", "## 2. Second Section", "Tail-Anchor-Open"));
+                "## 1. First Section", "## Appendix A. References", "## 2. Second Section", "Tail-Anchor-Open");
+            a208.MustAppearExactlyOnce = new[] { "Seed-One-Anchor", "Ref-Anchor-Alpha", "Tail-Anchor-Open" };
+            list.Add(a208);
 
             var a209 = Sc("A2.9", Reader,
                 "Read the file at exact path LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-truth-fixture.md. Verify whether these headings appear in this exact order: \"## 1. First Section\", \"## 2. Second Section\", \"## 3. Third Section\", \"## Appendix A. References\". Use the actual file contents and line positions. Do not infer or assume any heading or position that is not present in the retrieved content.",
@@ -264,7 +270,7 @@ namespace LMLocal.Tests.E2E.VSIX
 
             list.Add(Sc("A3.2", Analyzer,
                 "Find all references to ChatLogSerializer. Report file:line coordinates.",
-                "ChatLogSerializer", "ChatHistoryManager.cs"));
+                "ChatLogSerializer", "ChatPersistenceService.cs"));
 
             list.Add(Sc("A3.3", Analyzer,
                 "Inspect the type StreamCompletionResult and list its public members with file:line locations.",
@@ -316,7 +322,7 @@ namespace LMLocal.Tests.E2E.VSIX
 
         [TestMethod]
         [DynamicData(nameof(GetIterations))]
-        [Ignore("Disable to run benchmark")]
+        //[Ignore("Disable to run benchmark")]
         public async Task Run_Full_Benchmark(int iteration)
         {
             // Requires a running LM Studio + an Experimental VS instance; never auto-run.
@@ -551,6 +557,30 @@ namespace LMLocal.Tests.E2E.VSIX
                 }
             }
 
+            // Exactly-once evidence: each marker must occur exactly once. 0 = missing,
+            // 2+ = the same content arrived twice (printed in the answer text AND expanded
+            // from a ref marker by the runner, or via overlapping/multiple ref markers).
+            if (!notFoundMarker && s.MustAppearExactlyOnce != null)
+            {
+                foreach (var marker in s.MustAppearExactlyOnce)
+                {
+                    if (string.IsNullOrEmpty(marker))
+                    {
+                        continue;
+                    }
+
+                    var count = CountOccurrences(content, marker);
+                    if (count == 0)
+                    {
+                        violations.Add(new Violation("missing_evidence(exactly_once): " + marker, true));
+                    }
+                    else if (count > 1)
+                    {
+                        violations.Add(new Violation("duplicated_evidence: '" + marker + "' appears " + count + " times", true));
+                    }
+                }
+            }
+
             // Invented-path cross-check (only for non-mutating scenarios).
             if (notFoundMarker)
             {
@@ -763,6 +793,24 @@ namespace LMLocal.Tests.E2E.VSIX
             const int max = 6000;
             if (content == null) return null;
             return content.Length <= max ? content : content.Substring(0, max) + "\n...[truncated]";
+        }
+
+        /// <summary>
+        /// Counts non-overlapping occurrences of <paramref name="value"/> in <paramref name="text"/>
+        /// using ordinal, case-insensitive matching.
+        /// </summary>
+        private static int CountOccurrences(string text, string value)
+        {
+            if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(text)) return 0;
+
+            int count = 0;
+            int idx = 0;
+            while ((idx = text.IndexOf(value, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                count++;
+                idx += value.Length;
+            }
+            return count;
         }
 
         private static void SaveReport(List<BenchmarkResult> results, string solutionRoot)

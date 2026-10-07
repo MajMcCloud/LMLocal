@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using LMLocal.Core.Models;
 using LMLocal.Infrastructure.LlmApi.Requests;
-using LMLocal.Infrastructure.Tooling;
 
 namespace LMLocal.Infrastructure.LlmApi.Converter
 {

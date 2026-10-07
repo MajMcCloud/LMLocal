@@ -4,12 +4,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using LMLocal.Application.Abstractions.Ports;
+using LMLocal.Core.Common;
 using LMLocal.Core.Models;
 using LMLocal.Infrastructure.Api;
 using LMLocal.Infrastructure.LlmApi.Provider;
 using LMLocal.Infrastructure.LlmApi.Requests;
-using LMLocal.Infrastructure.Persistence;
-using LMLocal.Infrastructure.Tooling;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -83,7 +82,7 @@ namespace LMLocal.Application.Chat
         /// <summary>
         /// Returns lightweight summaries of recent chat sessions (last <paramref name="limit"/> sessions).
         /// </summary>
-        Task<List<ChatSessionSummary>> GetChatSessionsAsync(int limit = ChatLogSerializer.DefaultSessionListLimit);
+        Task<List<ChatSessionSummary>> GetChatSessionsAsync(int limit = ChatLogConstants.DefaultSessionListLimit);
 
         /// <summary>
         /// Loads all messages for a specific session by ID and makes it the working session (replaces in-memory history without spawning a new session boundary).
@@ -759,7 +758,7 @@ namespace LMLocal.Application.Chat
         /// <summary>
         /// Returns lightweight summaries of recent chat sessions (last <paramref name="limit"/> sessions).
         /// </summary>
-        public async Task<List<ChatSessionSummary>> GetChatSessionsAsync(int limit = ChatLogSerializer.DefaultSessionListLimit)
+        public async Task<List<ChatSessionSummary>> GetChatSessionsAsync(int limit = ChatLogConstants.DefaultSessionListLimit)
         {
             return await _persistence.GetChatSessionsAsync(limit).ConfigureAwait(false);
         }

@@ -1,5 +1,5 @@
 using LMLocal.Application.SubAgents;
-using LMLocal.Infrastructure.Tooling;
+using LMLocal.Core.Models;
 
 namespace LMLocal.Application.Abstractions.Ports
 {

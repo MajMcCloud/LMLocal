@@ -1,6 +1,6 @@
 namespace LMLocal.Core.Models
 {
-    internal class ChatMessage
+    public class ChatMessage
     {
         /// <summary>
         /// Role of the message sender. Common values: "user", "assistant", "system" (or developer?), "tool".
@@ -19,8 +19,6 @@ namespace LMLocal.Core.Models
 
         /// <summary>
         /// Tool calls initiated by assistant (only for role="assistant" when tool_calls are present).
-        /// When present, this should be a collection of ToolCall objects.
-        /// According to OpenAI spec: One assistant message can contain multiple tool_calls in the tool_calls array.
         /// </summary>
         public object ToolCalls { get; set; }
 

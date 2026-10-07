@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using LMLocal.Application.SubAgents.ReadRefs;
 using NUnit.Framework;
 
@@ -7,6 +7,12 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
     [TestFixture]
     public class FileRefMarkerTests
     {
+        private static int MalformedCount(string text)
+        {
+            FileRefMarker.ParseAll(text, out int malformedCount);
+            return malformedCount;
+        }
+
         // ---------------------------------------------------------------------
         // Format
         // ---------------------------------------------------------------------
@@ -161,7 +167,7 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             // A line number beyond int.MaxValue is rejected, not silently saturated to int.MaxValue.
             Assert.That(FileRefMarker.ParseAll("@file.cs:2147483648").Count, Is.EqualTo(0));
             Assert.That(FileRefMarker.ParseAll("@file.cs:99999999999999999").Count, Is.EqualTo(0));
-            Assert.That(FileRefMarker.CountMalformed("@file.cs:99999999999999999"), Is.EqualTo(1));
+            Assert.That(MalformedCount("@file.cs:99999999999999999"), Is.EqualTo(1));
         }
 
         [Test]
@@ -176,7 +182,7 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             // An '@' glued to a preceding word character is not a marker (emails, URLs, identifiers).
             Assert.That(FileRefMarker.ParseAll("user@host:8080").Count, Is.EqualTo(0));
             Assert.That(FileRefMarker.ParseAll("x@file.cs:1").Count, Is.EqualTo(0));
-            Assert.That(FileRefMarker.CountMalformed("user@host:8080"), Is.EqualTo(0));
+            Assert.That(MalformedCount("user@host:8080"), Is.EqualTo(0));
         }
 
         [Test]
@@ -190,29 +196,69 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
         }
 
         [Test]
+        public void Parse_BoldMarker_IsAcceptedAndConsumed()
+        {
+            // The prompt wraps the marker in Markdown bold (**@path:lines**); the parser must accept it and
+            // consume the surrounding asterisks so the whole span is replaced (not just the inner marker).
+            const string text = "**@file.cs:1-10**";
+            var markers = FileRefMarker.ParseAll(text);
+
+            Assert.That(markers.Count, Is.EqualTo(1));
+            Assert.That(markers[0].Path, Is.EqualTo("file.cs"));
+            Assert.That(markers[0].Ranges[0], Is.EqualTo(new LineRange(1, 10)));
+            Assert.That(markers[0].StartIndex, Is.EqualTo(0));
+            Assert.That(markers[0].Length, Is.EqualTo(text.Length));
+            Assert.That(text.Substring(markers[0].StartIndex, markers[0].Length), Is.EqualTo(text));
+        }
+
+        [Test]
+        public void Parse_BoldMarkerOnOwnLine_IsAccepted()
+        {
+            var markers = FileRefMarker.ParseAll("**File: docs/refactor.md**\n**@docs/refactor.md:52-66**");
+
+            // Only the ref marker line is a marker; the "File:" header line is not.
+            Assert.That(markers.Count, Is.EqualTo(1));
+            Assert.That(markers[0].Path, Is.EqualTo("docs/refactor.md"));
+            Assert.That(markers[0].Ranges[0], Is.EqualTo(new LineRange(52, 66)));
+        }
+
+        [Test]
+        public void Parse_SingleAsterisk_IsNotConsumed()
+        {
+            // A single '*' is accepted as a left boundary but is not an emphasis pair, so it stays outside the span.
+            const string text = "*@file.cs:1*";
+            var markers = FileRefMarker.ParseAll(text);
+
+            Assert.That(markers.Count, Is.EqualTo(1));
+            Assert.That(markers[0].StartIndex, Is.EqualTo(1));
+            Assert.That(markers[0].Length, Is.EqualTo(text.Length - 2));
+        }
+
+
+        [Test]
         public void Parse_VerbatimStringInSource_IsNotABareMarker()
         {
             // @"C:\temp\file.txt" has no "':' digits" tail, so it must not be reported as malformed either.
             var markers = FileRefMarker.ParseAll("var p = @\"C:\\temp\\file.txt\";");
 
             Assert.That(markers.Count, Is.EqualTo(0));
-            Assert.That(FileRefMarker.CountMalformed("var p = @\"C:\\temp\\file.txt\";"), Is.EqualTo(0));
+            Assert.That(MalformedCount("var p = @\"C:\\temp\\file.txt\";"), Is.EqualTo(0));
         }
 
         [Test]
-        public void CountMalformed_CountsIntendedButUnparseableMarkers()
+        public void Malformed_CountsIntendedButUnparseableMarkers()
         {
             // Empty path before the colon → looks intended (ends with ":<digits>") but cannot be parsed.
-            Assert.That(FileRefMarker.CountMalformed("@:1-2"), Is.EqualTo(1));
+            Assert.That(MalformedCount("@:1-2"), Is.EqualTo(1));
         }
 
         [Test]
-        public void CountMalformed_DoesNotCountParsedMarkers()
+        public void Malformed_DoesNotCountParsedMarkers()
         {
             const string text = "see @file.cs:1-10";
             var markers = FileRefMarker.ParseAll(text);
             Assert.That(markers.Count, Is.EqualTo(1));
-            Assert.That(FileRefMarker.CountMalformed(text), Is.EqualTo(0));
+            Assert.That(MalformedCount(text), Is.EqualTo(0));
         }
 
         // ---------------------------------------------------------------------

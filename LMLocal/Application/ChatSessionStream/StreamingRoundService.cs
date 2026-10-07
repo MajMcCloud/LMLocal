@@ -11,7 +11,6 @@ using LMLocal.Core.Models;
 using LMLocal.Infrastructure.LlmApi;
 using LMLocal.Infrastructure.LlmApi.Responses;
 using LMLocal.Infrastructure.ModelsConfig;
-using LMLocal.Infrastructure.Tooling;
 
 namespace LMLocal.Application.ChatSessionStream
 {
@@ -154,9 +153,6 @@ namespace LMLocal.Application.ChatSessionStream
                 }
 
                 var messages = history.BuildUserMessagesWithHistory(request.SystemPrompt);
-
-                if (_settingsManager.Current?.EnableHistoryCompression ?? false)
-                    messages = ChatHistoryNormalizer.NormalizeMessages(messages);
 
                 var processor = _streamProcessorFactory.Create(linkedCts);
 

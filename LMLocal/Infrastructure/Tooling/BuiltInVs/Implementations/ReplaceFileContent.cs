@@ -1,3 +1,4 @@
+using LMLocal.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -49,7 +50,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                     Properties = new Dictionary<string, ToolDetails>
                     {
                         { "file_path", new ToolDetails { Type = "string", Description = "Absolute or relative path to file." } },
-                        { "content", new ToolDetails { Type = "string", Description = "New file content to write." } }
+                        { "content", new ToolDetails { Type = "string", Description = "Raw source text to write as the complete file content." } }
                     },
                     Required = new List<string> { "file_path", "content" }
                 }

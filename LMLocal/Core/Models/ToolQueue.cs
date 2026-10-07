@@ -1,7 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
-namespace LMLocal.Infrastructure.Tooling
+namespace LMLocal.Core.Models
 {
     /// <summary>
     /// Immutable snapshot of a tool queue for a concrete LLM context.

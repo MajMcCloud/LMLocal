@@ -21,7 +21,7 @@ namespace LMLocal.Infrastructure.Persistence
         internal const int MaxJsonlFilesToScan = 100;
 
         /// <summary>Default limit for the session list returned by GetChatSessionsAsync.</summary>
-        internal const int DefaultSessionListLimit = 300;
+        internal const int DefaultSessionListLimit = ChatLogConstants.DefaultSessionListLimit;
 
         /// <summary>
         /// Builds the consistent hourly file name: yyyyMMdd_HH_label.jsonl.

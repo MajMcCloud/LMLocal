@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using LMLocal.Infrastructure.Tooling;
+using LMLocal.Core.Models;
 using LMLocal.Infrastructure.Tooling.Abstractions;
 
 namespace LMLocal.Infrastructure.Tooling.Mcp

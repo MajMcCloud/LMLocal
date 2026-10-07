@@ -70,14 +70,16 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Application\Abstractions\Ports\IChatInjectionService.cs" />
+    <Compile Include="Application\Abstractions\Ports\IChatPersistenceFactory.cs" />
+    <Compile Include="Application\Abstractions\Ports\IChatPersistenceService.cs" />
     <Compile Include="Application\Abstractions\Ports\IInstructionDefaultsProvider.cs" />
     <Compile Include="Application\Abstractions\Ports\IInstructionsManager.cs" />
+    <Compile Include="Application\Abstractions\Ports\IToolResultMarkdownFormatter.cs" />
     <Compile Include="Application\Abstractions\Ports\IToolRouter.cs" />
     <Compile Include="Application\Autocompletions\AutocompletionsService.cs" />
     <Compile Include="Application\Autocompletions\CompletionContext.cs" />
     <Compile Include="Application\ChatSessionStream\StreamingRoundService.cs" />
     <Compile Include="Application\Chat\ChatHistoryService.cs" />
-    <Compile Include="Application\Chat\ChatSessionSummary.cs" />
     <Compile Include="Application\Chat\ContentTextExtractor.cs" />
     <Compile Include="Application\ModelsList\TestConnectionResult.cs" />
     <Compile Include="Application\ModelsList\TestConnectionService.cs" />
@@ -100,6 +102,11 @@
     <Compile Include="Application\Tool\ToolActivityEvent.cs" />
     <Compile Include="Application\Tool\ToolCallLoopDetector.cs" />
     <Compile Include="Application\Tool\ToolMessageFactory.cs" />
+    <Compile Include="Core\Common\ChatLogConstants.cs" />
+    <Compile Include="Core\Models\ChatSessionSummary.cs" />
+    <Compile Include="Core\Models\ToolDefinition.cs" />
+    <Compile Include="Core\Models\ToolQueue.cs" />
+    <Compile Include="Infrastructure\Persistence\ChatPersistenceServiceFactory.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ToolFileOpener.cs" />
     <Compile Include="UI\ChatInjectionService.cs" />
     <Compile Include="Commands\AddSummaryCommand.cs" />
@@ -112,7 +119,6 @@
     <Compile Include="Commands\ReviewCommand.cs" />
     <Compile Include="Commands\SendToLMFromEditorCommand.cs" />
     <Compile Include="Commands\SendToLMFromSolutionExplorerCommand.cs" />
-    <Compile Include="Core\Common\ChatHistoryNormalizer.cs" />
     <Compile Include="Core\Common\ExceptionFormatter.cs" />
     <Compile Include="Core\Common\MarkdownCodeBlockFormatter.cs" />
     <Compile Include="Core\Common\MarkdownLanguageHelper.cs" />
@@ -264,7 +270,6 @@
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\GetSymbolInfoJs.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\GetSolutionOverview.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\SearchFileContent.cs" />
-    <Compile Include="Infrastructure\Tooling\Abstractions\ToolDefinition.cs" />
     <Compile Include="Core\Models\ModelContext.cs" />
     <Compile Include="Core\Models\MessageContext.cs" />
     <Compile Include="Infrastructure\LlmApi\Responses\SendChatResponse.cs" />
@@ -410,7 +415,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
-    <Compile Include="Infrastructure\Tooling\ToolQueue.cs" />
     <Compile Include="Infrastructure\Tooling\ToolQueueProvider.cs" />
     <Compile Include="Infrastructure\Tooling\ToolResultMarkdownFormatter.cs" />
     <Compile Include="Infrastructure\Tooling\ToolRouter.cs" />

@@ -1,3 +1,4 @@
+using LMLocal.Core.Models;
 using System.Collections.Generic;
 using LMLocal.Infrastructure.LlmApi.Converter;
 using LMLocal.Infrastructure.Tooling;

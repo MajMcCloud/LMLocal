@@ -584,5 +584,62 @@ namespace LMLocal.Tests.Unit.Infrastructure.Tooling.BuiltInVs.Implementations
             Assert.That(resp.Candidates[0].Text, Does.Contain("dup"));
             Assert.That(resp.Candidates[0].Text, Does.Contain("after"));
         }
+// ── JSON-escape asymmetry (investigation, escaped output vs raw input) ──
+        // read_file_lines returns each line JSON-serialized, so in the *tool output*
+        // the model sees \" and \\ inside "text". But old_lines/new_lines are passed
+        // to this tool as RAW characters (argument deserialization is one level only).
+        // So:
+        //   escaped-looking input (\" / \\\\ as typed in the tool-call JSON value)
+        //   → after JSON deserialize yields literal " and \ characters → must NOT match
+        //     a file whose line really contains \" / \\\\ (which is the escaped form of
+        //     a single " / \). This is the FAIL row in the investigation table.
+        //   raw input (single " / \ characters) → matches the real file. SUCCESS row.
+
+        [Test]
+        public async Task ExecuteAsync_EscapedDoubleQuote_DoesNotMatchRawQuote_ReturnsError()
+        {
+            // File really contains: SYM-QUOTE-DOUBLE: "double quoted value"
+            SetupFileContent("SYM-QUOTE-DOUBLE: \"double quoted value\"");
+            // Model errors by passing the escaped form \" (as seen in JSON tool output).
+            var result = await _tool.ExecuteAsync(CreateParams(
+                startLine: 1,
+                oldLines: "SYM-QUOTE-DOUBLE: \\\"double quoted value\\\"",
+                newLines: "replaced"));
+            var resp = result as ReplaceLinesResponse;
+            Assert.That(resp.Success, Is.False);
+            Assert.That(resp.ErrorMessage, Does.Contain("Old content not found in file"));
+        }
+
+        [Test]
+        public async Task ExecuteAsync_RawDoubleQuote_MatchesAndReplaces()
+        {
+            // File really contains: SYM-QUOTE-DOUBLE: "double quoted value"
+            SetupFileContent("SYM-QUOTE-DOUBLE: \"double quoted value\"");
+            var result = await _tool.ExecuteAsync(CreateParams(
+                startLine: 1,
+                oldLines: "SYM-QUOTE-DOUBLE: \"double quoted value\"",
+                newLines: "SYM-QUOTE-DOUBLE: \"changed value\""));
+            var resp = result as ReplaceLinesResponse;
+            Assert.That(resp.Success, Is.True);
+            _fileSystemMock.Verify(f => f.WriteAllBytesWithEncodingAsync(
+                AbsolutePath, "SYM-QUOTE-DOUBLE: \"changed value\"",
+                Encoding.UTF8, false, It.IsAny<CancellationToken>()));
+        }
+
+        [Test]
+        public async Task ExecuteAsync_RawBackslashString_MatchesAndReplaces()
+        {
+            // File really contains: \t (one backslash) and escaped string \" (backslash + quote)
+            SetupFileContent("var s = \"a\\\"b\";\nvar t = '\\t';");
+            var result = await _tool.ExecuteAsync(CreateParams(
+                startLine: 1,
+                oldLines: "var s = \"a\\\"b\";",
+                newLines: "var s = \"changed\";"));
+            var resp = result as ReplaceLinesResponse;
+            Assert.That(resp.Success, Is.True);
+            _fileSystemMock.Verify(f => f.WriteAllBytesWithEncodingAsync(
+                AbsolutePath, "var s = \"changed\";\nvar t = '\\t';",
+                Encoding.UTF8, false, It.IsAny<CancellationToken>()));
+        }
     }
 }

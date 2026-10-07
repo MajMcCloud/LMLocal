@@ -15,6 +15,7 @@ namespace LMLocal.Application.SubAgents.ReadRefs
     /// ranges      ::= range ("," range)*
     /// range       ::= NUMBER | NUMBER "-" NUMBER
     /// </code>
+    /// A marker may be wrapped in emphasis (surrounding backticks or <c>**</c>); the parser consumes it.
     /// </summary>
     internal sealed class FileRefMarker
     {
@@ -113,7 +114,7 @@ namespace LMLocal.Application.SubAgents.ReadRefs
         /// <summary>
         /// Attempts to parse a marker whose '@' sits at <paramref name="at"/>.
         /// </summary>
-        public static bool TryParseAt(string text, int at, out FileRefMarker marker)
+        private static bool TryParseAt(string text, int at, out FileRefMarker marker)
         {
             marker = null;
             if (string.IsNullOrEmpty(text) || at < 0 || at >= text.Length || text[at] != '@')
@@ -186,18 +187,17 @@ namespace LMLocal.Application.SubAgents.ReadRefs
                 spanEnd++;
             }
 
+            bool leadingBold = spanStart > 1 && text[spanStart - 1] == '*' && text[spanStart - 2] == '*';
+            bool trailingBold = spanEnd + 1 < text.Length && text[spanEnd] == '*' && text[spanEnd + 1] == '*';
+            if (leadingBold && trailingBold)
+            {
+                spanStart -= 2;
+                spanEnd += 2;
+            }
+
             int spanLength = spanEnd - spanStart;
             marker = new FileRefMarker(path, ranges, spanStart, spanLength);
             return true;
-        }
-
-        /// <summary>
-        /// Counts marker-like '@' tokens that failed to parse (observability only; never alters the text).
-        /// </summary>
-        internal static int CountMalformed(string text)
-        {
-            ParseAll(text, out int malformedCount);
-            return malformedCount;
         }
 
         private static bool LooksLikeIntendedMarker(string text, int at)
@@ -229,7 +229,7 @@ namespace LMLocal.Application.SubAgents.ReadRefs
         }
 
         private static bool IsBoundary(char c)
-            => char.IsWhiteSpace(c) || c == '(' || c == '[' || c == '`' || c == '"' || c == '>';
+            => char.IsWhiteSpace(c) || c == '(' || c == '[' || c == '`' || c == '"' || c == '>' || c == '*';
 
         private static bool TryParseRange(string text, ref int p, out LineRange range)
         {

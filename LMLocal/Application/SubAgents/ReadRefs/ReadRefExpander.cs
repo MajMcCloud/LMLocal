@@ -95,6 +95,7 @@ namespace LMLocal.Application.SubAgents.ReadRefs
         private async Task<string> TryRenderAsync(FileRefMarker marker, CancellationToken cancellationToken)
         {
             string absolutePath = null;
+            string headerPath = null;
             for (int i = 0; i < marker.Ranges.Count; i++)
             {
                 if (!_ledger.TryResolve(marker.Path, marker.Ranges[i], out var record) || string.IsNullOrEmpty(record.AbsolutePath))
@@ -102,6 +103,8 @@ namespace LMLocal.Application.SubAgents.ReadRefs
 
                 if (absolutePath == null)
                     absolutePath = record.AbsolutePath;
+                if (headerPath == null)
+                    headerPath = string.IsNullOrEmpty(record.RelativePath) ? marker.Path : record.RelativePath;
             }
 
             if (absolutePath == null)
@@ -123,9 +126,9 @@ namespace LMLocal.Application.SubAgents.ReadRefs
                 }
 
                 if (i > 0)
-                    sb.AppendLine();
+                    sb.Append('\n');
 
-                FileContentRenderer.AppendFencedContentBlock(sb, marker.Path, numbered);
+                FileContentRenderer.AppendRefContentBlock(sb, headerPath, range.Start, range.End, numbered);
             }
 
             return sb.ToString().TrimEnd('\r', '\n');

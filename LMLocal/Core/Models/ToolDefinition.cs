@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-namespace LMLocal.Infrastructure.Tooling
+namespace LMLocal.Core.Models
 {
     /// <summary>
     /// Defines the access level of a built-in tool.

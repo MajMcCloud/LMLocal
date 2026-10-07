@@ -1,3 +1,4 @@
+using LMLocal.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -69,7 +70,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                             { Type = "integer",Description = "Line number after which to insert (1-indexed). Use 0 to insert before the first line. Must be >= 0." }
                         },
                         { "new_lines", new ToolDetails
-                            { Type = "string",Description = "Text to insert. Can contain multiple lines separated by \\n or \\r\\n. Must not be empty." }
+                            { Type = "string",Description = "Raw source text to insert. Can contain multiple lines separated by \\n or \\r\\n. Must not be empty." }
                         },
                         { "expected_line", new ToolDetails
                             { Type = "string",Description = "The exact text of the line AFTER which to insert. If provided and the line has shifted, the tool searches nearby and auto-corrects position. Ignored when position=0." }

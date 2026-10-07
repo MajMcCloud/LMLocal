@@ -1,3 +1,4 @@
+using LMLocal.Core.Models;
 using LMLocal.Core.Common;
 using LMLocal.Infrastructure.Persistence;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Abstractions;

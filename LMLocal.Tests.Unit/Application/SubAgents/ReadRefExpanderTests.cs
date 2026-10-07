@@ -46,8 +46,10 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             Assert.That(result.ExpandedRefCount, Is.EqualTo(1));
             Assert.That(result.UnresolvedRefCount, Is.EqualTo(0));
             Assert.That(result.MalformedRefCount, Is.EqualTo(0));
-            Assert.That(result.Content, Does.Contain("1: line 1"));
-            Assert.That(result.Content, Does.Contain("10: line 10"));
+            Assert.That(result.Content, Does.Contain("File: src\\Program.cs, lines 1-10"));
+            Assert.That(result.Content, Does.Contain("````csharp\nline 1\n"));
+            Assert.That(result.Content, Does.Contain("line 10\n````"));
+            Assert.That(result.Content, Does.Not.Contain("1: line 1"));
             Assert.That(result.Content, Does.Not.Contain("@src\\Program.cs:1-10"));
             Assert.That(result.Content, Does.StartWith("Before"));
             Assert.That(result.Content, Does.EndWith("After"));
@@ -67,10 +69,11 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             var result = await expander.ExpandAsync("@src\\Program.cs:30-39", CancellationToken.None);
 
             Assert.That(result.ExpandedRefCount, Is.EqualTo(1));
-            Assert.That(result.Content, Does.Contain("30: line 30"));
-            Assert.That(result.Content, Does.Contain("39: line 39"));
-            Assert.That(result.Content, Does.Not.Contain("29: line 29"));
-            Assert.That(result.Content, Does.Not.Contain("40: line 40"));
+            Assert.That(result.Content, Does.Contain("File: src\\Program.cs, lines 30-39"));
+            Assert.That(result.Content, Does.Contain("````csharp\nline 30\n"));
+            Assert.That(result.Content, Does.Contain("line 39\n````"));
+            Assert.That(result.Content, Does.Not.Contain("line 29"));
+            Assert.That(result.Content, Does.Not.Contain("line 40"));
         }
 
         [Test]
@@ -120,7 +123,7 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             var result = await expander.ExpandAsync(@"@src\\Program.cs:1-10", CancellationToken.None);
 
             Assert.That(result.ExpandedRefCount, Is.EqualTo(1));
-            Assert.That(result.Content, Does.Contain("1: line 1"));
+            Assert.That(result.Content, Does.Contain("File: src\\Program.cs, lines 1-10"));
         }
 
         [Test]
@@ -152,8 +155,8 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
 
             Assert.That(result.ExpandedRefCount, Is.EqualTo(2));
 
-            int first = result.Content.IndexOf("1: line 1", System.StringComparison.Ordinal);
-            int second = result.Content.IndexOf("19: line 19", System.StringComparison.Ordinal);
+            int first = result.Content.IndexOf("File: src\\Program.cs, lines 1-2", System.StringComparison.Ordinal);
+            int second = result.Content.IndexOf("File: src\\Program.cs, lines 19-20", System.StringComparison.Ordinal);
             Assert.That(first, Is.GreaterThanOrEqualTo(0));
             Assert.That(second, Is.GreaterThan(first));
         }
@@ -176,7 +179,7 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
         }
 
         [Test]
-        public async Task Expand_RendersFencedBlockWithoutFilePathHeader()
+        public async Task Expand_RendersVerbatimBlockWithFileHeader()
         {
             var fileSystem = new InMemoryFileSystem();
             WriteFile(fileSystem, 10);
@@ -187,10 +190,11 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             var expander = CreateExpander(ledger, fileSystem);
             var result = await expander.ExpandAsync("@src\\Program.cs:1-10", CancellationToken.None);
 
-            // The model prints the "**File: path**" header itself; the expander must not add a second one.
-            Assert.That(result.Content, Does.Not.Contain("**`"));
-            Assert.That(result.Content, Does.StartWith("````csharp"));
-            Assert.That(result.Content, Does.EndWith("````"));
+            // The runner prints the "File: <path>, lines <start>-<end>" header and a verbatim fenced block
+            // (no line-number prefixes), so the content can be copied straight into an edit tool.
+            Assert.That(result.Content, Does.StartWith("File: src\\Program.cs, lines 1-10\n````csharp\nline 1\n"));
+            Assert.That(result.Content, Does.EndWith("line 10\n````"));
+            Assert.That(result.Content, Does.Not.Contain("1: line 1"));
         }
 
         [Test]
@@ -223,8 +227,29 @@ namespace LMLocal.Tests.Unit.Application.SubAgents
             var result = await expander.ExpandAsync("@src\\Program.cs:1-160", CancellationToken.None);
 
             Assert.That(result.ExpandedRefCount, Is.EqualTo(1));
-            Assert.That(result.Content, Does.Contain("1: line 1"));
-            Assert.That(result.Content, Does.Contain("160: line 160"));
+            Assert.That(result.Content, Does.Contain("File: src\\Program.cs, lines 1-160"));
+            Assert.That(result.Content, Does.Contain("````csharp\nline 1\n"));
+            Assert.That(result.Content, Does.Contain("line 160\n````"));
         }
+
+        [Test]
+        public async Task Expand_PreservesLeadingMarkdownQuotePrefix_Verbatim()
+        {
+            var fileSystem = new InMemoryFileSystem();
+            const string fileContent = "> line a\n>   line b\n> - line c";
+            fileSystem.WriteAllBytesAsync(AbsolutePath, Encoding.UTF8.GetBytes(fileContent)).Wait();
+
+            var ledger = new ReadLedger();
+            ledger.Add(new ReadRecord(RelativePath, 1, 3, AbsolutePath));
+
+            var expander = CreateExpander(ledger, fileSystem);
+            var result = await expander.ExpandAsync("@src\\Program.cs:1-3", CancellationToken.None);
+
+            Assert.That(result.ExpandedRefCount, Is.EqualTo(1));
+            // Leading '>' and indentation survive verbatim - no line numbers, no trimming.
+            Assert.That(result.Content, Does.Contain("````csharp\n> line a\n>   line b\n> - line c\n````"));
+            Assert.That(result.Content, Does.Not.Contain("1: >"));
+        }
+
     }
 }

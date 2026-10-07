@@ -33,6 +33,7 @@ namespace LMLocal.Application.SubAgents
         private readonly Func<IToolExecutionManager> _toolExecutionManagerResolver;
         private readonly IToolQueueProvider _queueProvider;
         private readonly IToolCallLoopDetector _loopDetector;
+        private readonly IChatPersistenceFactory _chatPersistenceFactory;
         private readonly string _logsFolder;
 
         public SubAgentsService(
@@ -41,7 +42,8 @@ namespace LMLocal.Application.SubAgents
             IStreamingRoundService roundService,
             Func<IToolExecutionManager> toolExecutionManagerResolver,
             IToolQueueProvider queueProvider,
-            IToolCallLoopDetector loopDetector)
+            IToolCallLoopDetector loopDetector,
+            IChatPersistenceFactory chatPersistenceFactory)
         {
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
@@ -49,6 +51,7 @@ namespace LMLocal.Application.SubAgents
             _toolExecutionManagerResolver = toolExecutionManagerResolver ?? throw new ArgumentNullException(nameof(toolExecutionManagerResolver));
             _queueProvider = queueProvider ?? throw new ArgumentNullException(nameof(queueProvider));
             _loopDetector = loopDetector ?? throw new ArgumentNullException(nameof(loopDetector));
+            _chatPersistenceFactory = chatPersistenceFactory ?? throw new ArgumentNullException(nameof(chatPersistenceFactory));
 
             string appDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -109,8 +112,8 @@ namespace LMLocal.Application.SubAgents
                     ApiKey = request.ApiKey
                 };
 
-                ChatPersistenceService persistence = new ChatPersistenceService(_settingsManager, _fileSystem, _logsFolder);
-                ChatHistoryManager history = new ChatHistoryManager(_settingsManager, persistence);
+                var persistence = _chatPersistenceFactory.Create(_logsFolder);
+                var history = new ChatHistoryManager(_settingsManager, persistence);
                 await persistence.MarkNewSessionAsync(cancellationToken).ConfigureAwait(false);
 
                 var usedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

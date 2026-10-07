@@ -1,3 +1,4 @@
+using LMLocal.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -330,9 +331,7 @@ internal static class IpcCommandHandler
 
     /// <summary>
     /// Executes any registered tool using positional string arguments (index 2.. of the
-    /// pipe-delimited command). Parameter names are taken from the tool's declared schema
-    /// in declaration order, so the client only has to provide values, in the same order
-    /// as the tool's parameter properties (or Required list).
+    /// pipe-delimited command).
     /// </summary>
     private static async Task<object> ExecuteToolAsync(
         IBuiltInVsToolProvider provider,

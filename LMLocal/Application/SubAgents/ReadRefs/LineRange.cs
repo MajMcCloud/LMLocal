@@ -17,14 +17,7 @@ namespace LMLocal.Application.SubAgents.ReadRefs
 
         public int End { get; }
 
-        public int Count => End - Start + 1;
-
         public bool IsValid => Start >= 1 && End >= Start;
-
-        /// <summary>
-        /// True when <paramref name="other"/> is fully contained in this range.
-        /// </summary>
-        public bool Contains(LineRange other) => other.Start >= Start && other.End <= End;
 
         public bool Equals(LineRange other) => Start == other.Start && End == other.End;
 

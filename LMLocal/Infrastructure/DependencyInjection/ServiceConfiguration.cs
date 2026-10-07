@@ -151,6 +151,7 @@ namespace LMLocal.Infrastructure.DependencyInjection
             services.AddSingleton<IServerCertificateTrust, ServerCertificateTrust>();
             services.AddSingleton<IHttpClientWrapper, HttpClientWrapper>();
             services.AddSingleton<IChatPersistenceService, ChatPersistenceService>();
+            services.AddSingleton<IChatPersistenceFactory, ChatPersistenceServiceFactory>();
             services.AddSingleton<IChatHistoryManager, ChatHistoryManager>();
             services.AddSingleton<IChatHistoryService, ChatHistoryService>();
             services.AddTransient<IStreamProcessorFactory, StreamProcessorFactory>();
@@ -175,7 +176,8 @@ namespace LMLocal.Infrastructure.DependencyInjection
                 sp.GetRequiredService<IStreamingRoundService>(),
                 () => sp.GetRequiredService<IToolExecutionManager>(),
                 sp.GetRequiredService<IToolQueueProvider>(),
-                sp.GetRequiredService<IToolCallLoopDetector>()));
+                sp.GetRequiredService<IToolCallLoopDetector>(),
+                sp.GetRequiredService<IChatPersistenceFactory>()));
             services.AddSingleton<ITestConnectionService, TestConnectionService>();
             services.AddSingleton<IAutocompletionsService, AutocompletionsService>();
             services.AddSingleton<IModelsListService, ModelsListService>();

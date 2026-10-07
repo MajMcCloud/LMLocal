@@ -1,3 +1,4 @@
+using LMLocal.Core.Models;
 namespace LMLocal.Infrastructure.Tooling.Abstractions
 {
     /// <summary>
