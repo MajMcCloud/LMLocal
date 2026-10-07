@@ -84,6 +84,19 @@ namespace LMLocal.Infrastructure.Settings
         }
 
         /// <summary>
+        /// Gets the cached settings without throwing, or <c>null</c> when they have not been loaded yet.
+        /// Use this for defensive reads outside the dialog flow (e.g. background or UI message handlers).
+        /// </summary>
+        internal AppSettings TryGetCurrent()
+        {
+            if (_disposed) return null;
+            lock (_lock)
+            {
+                return _isLoaded ? _cachedSettings : null;
+            }
+        }
+
+        /// <summary>
         /// Default configuration values (implementing default constants).
         /// </summary>
         public string ApplicationName => DefaultApplicationName;

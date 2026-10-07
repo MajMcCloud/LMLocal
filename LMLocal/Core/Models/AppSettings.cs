@@ -91,6 +91,12 @@ namespace LMLocal.Core.Models
         public bool OpenToolFilesInEditor { get; set; } = false;
 
         /// <summary>
+        /// When true, closing Visual Studio while an AI request is running asks the user first,
+        /// so a running query is not cancelled by accident.
+        /// </summary>
+        public bool PreventCloseWhileGenerating { get; set; } = true;
+
+        /// <summary>
         /// When true, sequential model tool executions are grouped into a single compact UI block to reduce chat clutter.
         /// </summary>
         public bool CollapseToolCalls { get; set; } = false;
@@ -128,6 +134,7 @@ namespace LMLocal.Core.Models
                 && EnableSubAgents == other.EnableSubAgents
                 && EnableCodeCollapse == other.EnableCodeCollapse
                 && OpenToolFilesInEditor == other.OpenToolFilesInEditor
+                && PreventCloseWhileGenerating == other.PreventCloseWhileGenerating
                 && CollapseToolCalls == other.CollapseToolCalls
                 && ShowTokenStats == other.ShowTokenStats
                 && string.Equals(ApiKey, other.ApiKey, StringComparison.Ordinal)
@@ -157,6 +164,7 @@ namespace LMLocal.Core.Models
                 hash = hash * 23 + EnableSubAgents.GetHashCode();
                 hash = hash * 23 + EnableCodeCollapse.GetHashCode();
                 hash = hash * 23 + OpenToolFilesInEditor.GetHashCode();
+                hash = hash * 23 + PreventCloseWhileGenerating.GetHashCode();
                 hash = hash * 23 + CollapseToolCalls.GetHashCode();
                 hash = hash * 23 + ShowTokenStats.GetHashCode();
                 hash = hash * 23 + (ApiKey != null ? StringComparer.Ordinal.GetHashCode(ApiKey) : 0);
