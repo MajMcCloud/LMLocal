@@ -48,16 +48,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Inserts lines at a specific position in a file. "
-                    + "Lines are 1-indexed: position=0 inserts before the first line, "
-                    + "position=5 inserts after line 5. Automatically pads the file "
-                    + "with empty lines if position exceeds the current line count. "
-                    + "The new_lines string can contain multiple lines separated by "
-                    + "\\n or \\r\\n. Must not be empty. Fails if the file does not "
-                    + "exist or is outside the solution directory. "
-                    + "If expected_line is provided and the line at 'position' doesn't "
-                    + "match, the tool searches nearby lines (±50) and auto-corrects "
-                    + "the position.",
+                Description = "Inserts lines at a specific position in a file. Lines are 1-indexed: position=0 inserts before the first line, position=5 inserts after line 5. Automatically pads the file with empty lines if position exceeds the current line count. The new_lines string can contain multiple lines separated by \\n or \\r\\n. Must not be empty. Fails if the file does not exist or is outside the solution directory. If expected_line is provided and the line at 'position' doesn't match, the tool searches nearby lines (±50) and auto-corrects the position.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",

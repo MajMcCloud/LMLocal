@@ -1,4 +1,3 @@
-using LMLocal.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LMLocal.Application.Abstractions.Ports;
 using LMLocal.Core.Common;
+using LMLocal.Core.Models;
 using LMLocal.Infrastructure.Persistence;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Abstractions;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Common;
@@ -188,9 +188,25 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                 SessionTitle = ChatLogSerializer.TruncatePrompt(session.Title),
                 Timestamp = session.TimestampUtc == DateTime.MinValue ? null : session.TimestampUtc.ToString("o"),
                 Role = score.Role,
-                Heading = score.Heading,
+                Heading = TruncateHeading(score.Heading),
                 Snippet = score.Snippet
             };
+        }
+
+        /// <summary>
+        /// Truncates the matched user question (heading) for presentation.
+        /// </summary>
+        private static string TruncateHeading(string heading)
+        {
+            string truncated = ChatLogSerializer.Truncate(heading, ChatHistoryScorer.MaxHeadingLength);
+
+            if (heading != null && heading.Length > ChatHistoryScorer.MaxHeadingLength)
+            {
+                InternalLogger.Debug(
+                    $"search_chat_history: truncated heading from {heading.Length} to {truncated.Length} chars.");
+            }
+
+            return truncated;
         }
 
         private static int CompareMatches(ChatHistoryMatchResult a, ChatHistoryMatchResult b)

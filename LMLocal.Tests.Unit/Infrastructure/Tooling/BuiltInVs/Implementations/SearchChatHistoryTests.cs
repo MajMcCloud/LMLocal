@@ -135,6 +135,60 @@ namespace LMLocal.Tests.Unit.Infrastructure.Tooling.BuiltInVs.Implementations
         }
 
         [Test]
+        public void Execute_LongUserHeading_IsTruncatedForPresentation()
+        {
+            // Simulates the consolidated user message (short question + tool-result dumps): the
+            // heading returned to the model must be truncated even though the full text is scored.
+            string longQuestion = new string('x', 1000) + " NLog";
+            SetupSessions(Log("s1", Msg("user", longQuestion, 0), Msg("assistant", "done", 1)));
+
+            var resp = Run(_tool, new Dictionary<string, object> { { "query", "NLog" } });
+
+            Assert.That(resp.Results, Has.Count.EqualTo(1));
+            var heading = resp.Results[0].Heading;
+            Assert.That(heading.Length, Is.EqualTo(ChatHistoryScorer.MaxHeadingLength + 3));
+            Assert.That(heading.EndsWith("..."), Is.True);
+            Assert.That(heading.StartsWith(new string('x', ChatHistoryScorer.MaxHeadingLength)), Is.True);
+            Assert.That(heading.Length, Is.LessThan(longQuestion.Length));
+        }
+
+        [Test]
+        public void Execute_ShortUserHeading_IsNotTruncated()
+        {
+            SetupSessions(Log("s1", Msg("user", "How to configure NLog?", 0), Msg("assistant", "done", 1)));
+
+            var resp = Run(_tool, new Dictionary<string, object> { { "query", "NLog" } });
+
+            Assert.That(resp.Results, Has.Count.EqualTo(1));
+            Assert.That(resp.Results[0].Heading, Is.EqualTo("How to configure NLog?"));
+        }
+
+        [Test]
+        public void Execute_HeadingExactlyAtLimit_IsNotTruncated()
+        {
+            string question = new string('x', 295) + " NLog"; // length == MaxHeadingLength (300)
+            SetupSessions(Log("s1", Msg("user", question, 0), Msg("assistant", "done", 1)));
+
+            var resp = Run(_tool, new Dictionary<string, object> { { "query", "NLog" } });
+
+            Assert.That(resp.Results, Has.Count.EqualTo(1));
+            Assert.That(resp.Results[0].Heading, Is.EqualTo(question));
+        }
+
+        [Test]
+        public void Execute_HeadingOneOverLimit_IsTruncated()
+        {
+            string question = new string('x', 296) + " NLog"; // length == MaxHeadingLength + 1
+            SetupSessions(Log("s1", Msg("user", question, 0), Msg("assistant", "done", 1)));
+
+            var resp = Run(_tool, new Dictionary<string, object> { { "query", "NLog" } });
+
+            Assert.That(resp.Results, Has.Count.EqualTo(1));
+            Assert.That(resp.Results[0].Heading.Length, Is.EqualTo(ChatHistoryScorer.MaxHeadingLength + 3));
+            Assert.That(resp.Results[0].Heading.EndsWith("..."), Is.True);
+        }
+
+        [Test]
         public void Execute_ExcludesCurrentSession()
         {
             var currentGuid = Guid.NewGuid();

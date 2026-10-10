@@ -152,9 +152,12 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                     }
                     else
                     {
-                        string solutionConfiguration = dte.Solution.SolutionBuild.ActiveConfiguration?.Name;
-                        if (string.IsNullOrEmpty(solutionConfiguration))
+                        if (!(dte.Solution.SolutionBuild.ActiveConfiguration is SolutionConfiguration2 activeConfig) || string.IsNullOrEmpty(activeConfig.Name))
                             return ErrorResponse("No active solution configuration is available.", solutionName, solutionPath);
+
+                        string solutionConfiguration = activeConfig.Name;
+                        if (!string.IsNullOrEmpty(activeConfig.PlatformName))
+                            solutionConfiguration += "|" + activeConfig.PlatformName;
 
                         dte.Solution.SolutionBuild.BuildProject(solutionConfiguration, projectUniqueName, false);
                     }
@@ -498,7 +501,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Builds the currently opened VS solution asynchronously, or a single project when 'project_name' is specified. Use after making code changes to verify they compile. Fails if no solution is open, or a build is already in progress. Returns build status and any compilation errors with file/line/column details.",
+                Description = "Builds the currently opened VS solution asynchronously, or a single project when 'project_name' is specified. Use after making code changes to verify they compile. Fails if no solution is open, or a build is already in progress. Returns build status and any compilation errors with file/line/column details. Result is json.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",

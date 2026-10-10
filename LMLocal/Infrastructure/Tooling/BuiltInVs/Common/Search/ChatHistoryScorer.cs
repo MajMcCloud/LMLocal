@@ -79,6 +79,9 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Search
     {
         public const int SnippetRadius = 150;
 
+        /// <summary>Maximum length of a matched user question (heading) shown in search results before truncation. A heading may be a consolidated user message (original question + tool-result dumps), so it is truncated for presentation only; the full text is still used for scoring.</summary>
+        public const int MaxHeadingLength = 300;
+
         private const string UserRole = "user";
         private const string AssistantRole = "assistant";
         private const string ToolRole = "tool";

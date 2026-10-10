@@ -158,8 +158,7 @@ namespace LMLocal.Infrastructure.VisualStudio
 
             try
             {
-                var window = sender as System.Windows.Window;
-                if (window == null) return;
+                if (!(sender is System.Windows.Window window)) return;
 
                 // Only react to the window that currently is the application main window.
                 if (ReferenceEquals(window, _application.MainWindow))
@@ -217,7 +216,7 @@ namespace LMLocal.Infrastructure.VisualStudio
         {
             // Ignore close events of a window that is no longer the main window (e.g. a start window that
             // Visual Studio discards while a solution loads).
-            var current = _application != null ? _application.MainWindow : null;
+            var current = _application?.MainWindow;
             if (current != null && !ReferenceEquals(sender, current))
                 return;
 
@@ -384,8 +383,7 @@ namespace LMLocal.Infrastructure.VisualStudio
 
             // Preferred path: exception-free read. Settings are loaded lazily, so they may not be
             // available yet (e.g. when VS is closed before the chat window was ever shown).
-            var manager = _settingsManager as SettingsManager;
-            if (manager != null)
+            if (_settingsManager is SettingsManager manager)
             {
                 AppSettings cached = manager.TryGetCurrent();
                 return cached?.PreventCloseWhileGenerating ?? true;
@@ -439,7 +437,7 @@ namespace LMLocal.Infrastructure.VisualStudio
             // while the AI request continues in the background.
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            System.Windows.Window owner = _mainWindow ?? (_application != null ? _application.MainWindow : null);
+            System.Windows.Window owner = _mainWindow ?? (_application?.MainWindow);
 
             // Preferred path: a styled WPF dialog. The native TaskDialogIndirect is intentionally not used -
             // inside the Visual Studio host it fails with E_INVALIDARG ("class not registered") because no
@@ -599,8 +597,10 @@ namespace LMLocal.Infrastructure.VisualStudio
         {
             try
             {
-                var border = new System.Windows.FrameworkElementFactory(typeof(System.Windows.Controls.Border));
-                border.Name = "AccentBorder";
+                var border = new System.Windows.FrameworkElementFactory(typeof(System.Windows.Controls.Border))
+                {
+                    Name = "AccentBorder"
+                };
                 border.SetValue(System.Windows.Controls.Border.BackgroundProperty, AccentBrush);
                 border.SetValue(System.Windows.Controls.Border.BorderBrushProperty, AccentBrush);
                 border.SetValue(System.Windows.Controls.Border.BorderThicknessProperty, new System.Windows.Thickness(1));
@@ -653,7 +653,7 @@ namespace LMLocal.Infrastructure.VisualStudio
         {
             try
             {
-                System.Windows.Window window = _mainWindow ?? (_application != null ? _application.MainWindow : null);
+                System.Windows.Window window = _mainWindow ?? (_application?.MainWindow);
                 if (window != null)
                 {
                     IntPtr handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
@@ -661,9 +661,7 @@ namespace LMLocal.Infrastructure.VisualStudio
                         return handle;
                 }
 
-                var uiShell = Package.GetGlobalService(typeof(SVsUIShell)) as IVsUIShell;
-                IntPtr hwnd;
-                if (uiShell != null && ErrorHandler.Succeeded(uiShell.GetDialogOwnerHwnd(out hwnd)))
+                if (Package.GetGlobalService(typeof(SVsUIShell)) is IVsUIShell uiShell && ErrorHandler.Succeeded(uiShell.GetDialogOwnerHwnd(out IntPtr hwnd)))
                     return hwnd;
             }
             catch (Exception ex)
@@ -698,7 +696,7 @@ namespace LMLocal.Infrastructure.VisualStudio
 
         #region Broadcast messages (WM_QUERYENDSESSION)
 
-        private int OnBroadcastMessage(int message, IntPtr wParam, IntPtr lParam)
+        private int OnBroadcastMessage(int message, IntPtr _, IntPtr __)
         {
             if (message == WM_QUERYENDSESSION && TryVetoClose("WM_QUERYENDSESSION"))
             {

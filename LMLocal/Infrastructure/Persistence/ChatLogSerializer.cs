@@ -107,11 +107,18 @@ namespace LMLocal.Infrastructure.Persistence
         /// <summary>
         /// Truncates a session prompt to MaxPromptLength chars, appending an ellipsis when truncated.
         /// </summary>
-        internal static string TruncatePrompt(string content)
+        internal static string TruncatePrompt(string content) => Truncate(content, MaxPromptLength);
+
+        /// <summary>
+        /// Truncates <paramref name="content"/> to <paramref name="maxLength"/> chars, appending an ellipsis when truncated.
+        /// </summary>
+        internal static string Truncate(string content, int maxLength)
         {
             if (string.IsNullOrEmpty(content)) return string.Empty;
-            return content.Length > MaxPromptLength
-                ? content.Substring(0, MaxPromptLength) + "..."
+            if (maxLength < 0) throw new ArgumentOutOfRangeException(nameof(maxLength));
+
+            return content.Length > maxLength
+                ? content.Substring(0, maxLength) + "..."
                 : content;
         }
 

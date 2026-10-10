@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using LMLocal.Core.Models;
 using LMLocal.Infrastructure.LlmApi.Requests;
@@ -157,6 +157,30 @@ namespace LMLocal.Tests.Unit.Infrastructure
         public void TruncatePrompt_NullOrEmpty_ReturnsEmpty(string content)
         {
             Assert.That(ChatLogSerializer.TruncatePrompt(content), Is.EqualTo(string.Empty));
+        }
+
+        [Test]
+        public void Truncate_AboveLimit_TruncatesWithEllipsis()
+        {
+            var content = new string('x', 10);
+
+            var result = ChatLogSerializer.Truncate(content, 4);
+
+            Assert.That(result, Is.EqualTo("xxxx..."));
+        }
+
+        [Test]
+        public void Truncate_AtOrBelowLimit_ReturnsAsIs()
+        {
+            Assert.That(ChatLogSerializer.Truncate("abcd", 4), Is.EqualTo("abcd"));
+            Assert.That(ChatLogSerializer.Truncate("abc", 4), Is.EqualTo("abc"));
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        public void Truncate_NullOrEmpty_ReturnsEmpty(string content)
+        {
+            Assert.That(ChatLogSerializer.Truncate(content, 5), Is.EqualTo(string.Empty));
         }
 
         [Test]

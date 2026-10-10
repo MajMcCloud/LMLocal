@@ -12,7 +12,7 @@ namespace LMLocal.Core.Common
         private static readonly JsonSerializerSettings IndentedSettings = new JsonSerializerSettings
         {
             Formatting = Formatting.Indented,
-            
+
         };
 
         private static readonly JsonSerializerSettings IndentedSettingsWithEnumValues = new JsonSerializerSettings

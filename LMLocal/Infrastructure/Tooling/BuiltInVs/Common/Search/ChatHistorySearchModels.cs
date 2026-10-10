@@ -103,7 +103,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Search
         public string Role { get; set; }
 
         /// <summary>
-        /// The user question (heading) of the matched turn.
+        /// The user question (heading) of the matched turn, truncated for presentation.
         /// </summary>
         [JsonProperty("heading", NullValueHandling = NullValueHandling.Ignore)]
         public string Heading { get; set; }

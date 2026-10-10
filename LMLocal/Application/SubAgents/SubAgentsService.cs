@@ -25,7 +25,7 @@ namespace LMLocal.Application.SubAgents
         private const string LogsFolderName = "SubAgentsLogs";
         private const int DefaultMaxRounds = 10;
         private const int DefaultTimeoutSeconds = 120;
-        private const int MaxDuplicateToolRounds = 1;
+        private const int MaxDuplicateToolRounds = 2;
 
         private readonly ISettingsManager _settingsManager;
         private readonly IFileSystem _fileSystem;

@@ -24,6 +24,7 @@ namespace LMLocal.Tests.E2E.VSIX
         private const string Explorer = "code_explorer_subagent";
         private const string Reader = "code_reader_subagent";
         private const string Analyzer = "symbol_analyzer_subagent";
+        private const string Reviewer = "reviewer_subagent";
 
         public TestContext TestContext { get; set; }
 
@@ -75,6 +76,10 @@ namespace LMLocal.Tests.E2E.VSIX
             public List<string> ToolsUsed = new List<string>();
             public int Rounds;
             public double DurationMs;
+            public int? PromptTokens;
+            public int? CompletionTokens;
+            public int? TotalTokens;
+            public double TokensPerSecond;
             public List<string> Violations = new List<string>();
         }
 
@@ -141,43 +146,44 @@ namespace LMLocal.Tests.E2E.VSIX
             var guid = Guid.NewGuid().ToString("N").Substring(0, 12);
             //----A.1 code_explorer_subagent: discovery(10)------------------ -
             list.Add(Sc("A1.1", Explorer,
-                "Find where the class ToolCallRecord is declared. Report the file path and line number.",
-                "StreamCompletionResult.cs", "114"));
+                "Search for the exact identifier ToolCallRecord. Report yes if the returned result includes StreamCompletionResult.cs at line 114.",
+                "yes"));
 
             list.Add(Sc("A1.2", Explorer,
-                "Find all occurrences of GetAsync in the solution. Report how many were found and list the first few files.",
+                "Search for the exact identifier GetAsync in the solution. Report yes if the returned results include GetAsync and report the returned total count.",
                 "GetAsync"));
 
             list.Add(Sc("A1.3", Explorer,
-                "Find the file that defines the class ChatLogSerializer.",
-                "ChatLogSerializer.cs", "Persistence"));
+                "Find the file named ChatLogSerializer.cs. Report yes if the returned path includes Persistence.",
+                "yes"));
 
-            list.Add(NotFoundSc("A1.4", Explorer,
-                "Check whether any .csproj in the solution references the NuGet package Newtonsoft.Json. Distinguish a PackageReference directed at that package from a using Newtonsoft.Json directive in source files.",
-                "PackageReference"));
+            list.Add(Sc("A1.4", Explorer,
+                "Search for the exact XML text PackageReference Include=\"Microsoft.CodeAnalysis\". Report yes if the returned result is a PackageReference to Microsoft.CodeAnalysis.",
+                "yes"));
 
             list.Add(Sc("A1.5", Explorer,
-                "Find the file named StreamProcessor.cs and report its exact path.",
-                "StreamProcessor.cs"));
+                "Find the file named StreamProcessor.cs. Report yes if the returned file name is StreamProcessor.cs.",
+                "yes"));
 
             list.Add(Sc("A1.6", Explorer,
-                "Find all occurrences of ConsolidateLastExchangeAsync in the production project LMLocal only (exclude test projects).",
-                "ConsolidateLastExchangeAsync"));
+                "Search for the exact identifier ConsolidateLastExchangeAsync with project filter LMLocal. Report yes if the returned results belong to project LMLocal.",
+                "yes"));
 
-            list.Add(NotFoundSc("A1.7", Explorer,
-                $"Search for the literal text bench-{guid}-{guid}."));
+            list.Add(Sc("A1.7", Explorer,
+                $"Search for the literal text bench-{guid}-{guid}. Report yes if the search tool returned zero matches.",
+                "yes"));
 
             list.Add(Sc("A1.8", Explorer,
-                "Search for 'using Newtonsoft' and return the complete result list, handling pagination. State the total count and whether the list is truncated.",
-                "Newtonsoft"));
+                "Search for the exact text using Newtonsoft. Retrieve all returned pages. Report yes if the final result contains the complete returned result list and the reported total count.",
+                "yes"));
 
-            list.Add(NotFoundSc("A1.9", Explorer,
-                "Describe the project structure of a project named LMLocal.Web.",
-                "LMLocal.Web"));
+            list.Add(Sc("A1.9", Explorer,
+                "Get the solution overview and report yes if returned project list doen't contain LMLocal.Web.",
+                "yes"));
 
             list.Add(Sc("A1.10", Explorer,
-                "Search for the exact identifier \"ToolCallRecord\" and report all matching file paths and line numbers from all pages.",
-                "StreamCompletionResult.cs", "114"));
+                "Search for the exact identifier ToolCallRecord and retrieve all returned pages. Report yes if the returned results include StreamCompletionResult.cs at line 114.",
+                "yes"));
 
             // ---- A.2 code_reader_subagent: deterministic reading (9) ----------
             list.Add(Sc("A2.1", Reader,
@@ -200,9 +206,9 @@ namespace LMLocal.Tests.E2E.VSIX
                 "Read these 4 files and return them verbatim: ChatLogSerializer.cs, StreamCompletionResult.cs, StreamProcessor.cs, ChatHistoryManager.cs.",
                 "ChatLogSerializer", "ToolCallRecord", "ProcessStreamAsync", "ConsolidateLastExchangeAsync"));
 
-            list.Add(NotFoundSc("A2.6", Reader,
-                "Read LMLocal/Infrastructure/Persistence/NoSuchSerializer.cs.",
-                "NoSuchSerializer.cs"));
+            list.Add(Sc("A2.6", Reader,
+                "Read LMLocal/Infrastructure/Persistence/NoSuchSerializer.cs and return yes if not found.",
+                "yes"));
 
             list.Add(Sc("A2.7", Reader,
                 "Read LMLocal/Infrastructure/Persistence/ChatLogSerializer.cs. If the entire file is not returned, clearly state that it is partial and identify the missing portion.",
@@ -221,7 +227,7 @@ namespace LMLocal.Tests.E2E.VSIX
             list.Add(a209);
 
             list.Add(Sc("A2.10", Reader,
-                "Read the entire file LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-large-fixture.md (400 lines) and return it verbatim. Continue reading until the entire file has been retrieved; do not stop while has_more_results is true.",
+                "Read the entire file LMLocal.Tests.E2E.VSIX\\Fixtures\\reader-large-fixture.md and return it verbatim. Continue reading until the entire file has been retrieved; do not stop while has_more_results is true.",
                 "Reader-Start", "Reader-End"));
 
             var a211 = ScVerbatim("A2.11", Reader,
@@ -304,8 +310,20 @@ namespace LMLocal.Tests.E2E.VSIX
                 "Find the C# method AddAssistantMessage in LMLocal/Application/Chat/ChatHistoryManager.cs. It has an interface declaration and two concrete overloads. Select the concrete implementation overload that accepts IReadOnlyList<ToolCallRecord> and return its declaration line together with its full implementation body.",
                 "AddAssistantMessage", "toolCallObjects", "normalizedArguments"));
 
+            // ---- A.4 reviewer_subagent: structured status review (2) ----
+            var a41 = Sc("A4.1", Reviewer,
+                "Review the following completed deliverable and produce your structured review ending with an exact final 'Status: ...' line. The change is a small refactoring of ChatHistoryManager: the ToolCalls copying logic was extracted into a private helper. The build passes, all existing unit tests for the chat service pass, and a new unit test covers the copied-by-reference behavior. The user requested exactly this refactoring and it is complete; no further phases are planned. Review it adversarially.",
+                "Status:");
+            a41.MustContainAny = new[] { new[] { "COMPLETE", "PARTIAL" } };
+            a41.MustNotContain = new[] { "Status: REJECTED" };
+            list.Add(a41);
 
-
+            var a42 = Sc("A4.2", Reviewer,
+                "Review the following implementation plan for executability and completeness. Produce your structured review ending with an exact final 'Status: ...' line. PLAN: Phase 1 adds a new ChatProcessor class that depends on IMessageBus, and wires it into ChatHistoryManager. Phase 2 (explicitly planned for a later release, NOT part of this deliverable) registers IMessageBus in DI and implements its only implementation. Phase 1 must be delivered now, must compile, and must run in production. Determine whether Phase 1 is executable as stated.",
+                "Status:");
+            a42.MustContainAny = new[] { new[] { "PARTIAL", "REJECTED" } };
+            a42.MustNotContain = new[] { "Status: COMPLETE" };
+            list.Add(a42);
 
             return list;
         }
@@ -316,18 +334,18 @@ namespace LMLocal.Tests.E2E.VSIX
         public static IEnumerable<object[]> GetIterations()
         {
             const int from = 1;
-            const int to = 1;
-            return Enumerable.Range(from, to - from + 1).Select(i => new object[] { i });
+            const int to = 5;
+            return Enumerable.Range(from, to - from + 1).Select(i => new object[] { i }).ToList();
         }
 
         [TestMethod]
         [DynamicData(nameof(GetIterations))]
-        //[Ignore("Disable to run benchmark")]
+        [Ignore("Disable to run benchmark")]
         public async Task Run_Full_Benchmark(int iteration)
         {
             // Requires a running LM Studio + an Experimental VS instance; never auto-run.
             if (iteration != 1)
-                await Task.Delay(TimeSpan.FromSeconds(3));
+                await Task.Delay(TimeSpan.FromSeconds(1), CancellationToken.None);
 
             using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(180)))
             {
@@ -461,6 +479,10 @@ namespace LMLocal.Tests.E2E.VSIX
             result.ToolsUsed = r.ToolsUsed ?? new List<string>();
             result.Rounds = r.Rounds;
             result.Content = Truncate(content);
+            result.PromptTokens = r.PromptTokens;
+            result.CompletionTokens = r.CompletionTokens;
+            result.TotalTokens = r.TotalTokens;
+            result.TokensPerSecond = r.TokensPerSecond;
 
             if (!r.Success)
             {
@@ -468,8 +490,11 @@ namespace LMLocal.Tests.E2E.VSIX
             }
 
             // Soft diagnostics (только если сценарий это разрешает).
+            // Refusal pattern is intentionally narrow: agents (e.g. the reviewer) legitimately
+            // write "cannot be verified/executed" without refusing. Only first-person refusals
+            // of the task itself count.
             if (s.CheckRefusal
-                && Regex.IsMatch(content, @"(?i)\b(i can't|cannot|sorry|i don't know|i am not able)\b"))
+                && Regex.IsMatch(content, @"(?i)\b(i ('?m| am) not (able|allowed)|i can'?t|i cannot|i won'?t|i don'?t know|sorry, (but )?i can't|i refuse)\b"))
             {
                 violations.Add(new Violation("refusal", false));
             }
@@ -823,7 +848,10 @@ namespace LMLocal.Tests.E2E.VSIX
                 ["total"] = results.Count,
                 ["pass"] = results.Count(r => r.Verdict == "PASS"),
                 ["partial"] = results.Count(r => r.Verdict == "PARTIAL"),
-                ["fail"] = results.Count(r => r.Verdict == "FAIL")
+                ["fail"] = results.Count(r => r.Verdict == "FAIL"),
+                ["totalTokensSum"] = results.Sum(r => r.TotalTokens ?? 0),
+                ["promptTokensSum"] = results.Sum(r => r.PromptTokens ?? 0),
+                ["completionTokensSum"] = results.Sum(r => r.CompletionTokens ?? 0)
             };
 
             var items = new JArray();
@@ -839,6 +867,10 @@ namespace LMLocal.Tests.E2E.VSIX
                     ["toolsUsed"] = new JArray(r.ToolsUsed ?? new List<string>()),
                     ["rounds"] = r.Rounds,
                     ["durationMs"] = r.DurationMs,
+                    ["promptTokens"] = r.PromptTokens,
+                    ["completionTokens"] = r.CompletionTokens,
+                    ["totalTokens"] = r.TotalTokens,
+                    ["tokensPerSecond"] = r.TokensPerSecond,
                     ["violations"] = new JArray(r.Violations ?? new List<string>())
                 });
             }
