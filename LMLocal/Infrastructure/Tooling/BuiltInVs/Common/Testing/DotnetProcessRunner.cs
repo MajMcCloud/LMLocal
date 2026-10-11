@@ -35,7 +35,8 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Testing
             string workingDirectory,
             TimeSpan timeout,
             CancellationToken cancellationToken,
-            int maxOutputSize = DefaultMaxOutputSize)
+            int maxOutputSize = DefaultMaxOutputSize,
+            string executable = null)
         {
             if (string.IsNullOrWhiteSpace(arguments))
                 throw new ArgumentException("Arguments must be a non-empty string.", nameof(arguments));
@@ -48,7 +49,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Testing
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = "dotnet",
+                FileName = string.IsNullOrWhiteSpace(executable) ? "dotnet" : executable,
                 Arguments = arguments,
                 WorkingDirectory = workingDirectory,
                 UseShellExecute = false,

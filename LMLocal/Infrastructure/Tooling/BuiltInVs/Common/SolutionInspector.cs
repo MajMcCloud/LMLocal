@@ -58,40 +58,66 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common
             if (maxProjects <= 0)
                 maxProjects = 200;
 
-            string solutionDirectory = null;
-            string solutionFile = null;
+            var workspace = ResolveWorkspace(solution, fallbackWorkspaceRoot);
 
-            if (solution != null)
-                solution.GetSolutionInfo(out solutionDirectory, out solutionFile, out string _);
-
-            // No solution service at all: fall back to a caller-provided folder root (folder mode),
-            // otherwise there is nothing to report.
-            if (solution == null)
-            {
-                string root = NormalizeDirectoryPath(fallbackWorkspaceRoot);
-                if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
-                    return GetFolderOverview(root, maxProjects);
-
-                return CreateEmptyOverview(WorkspaceKind.None, null);
-            }
-
-            WorkspaceKind workspaceKind = DetermineWorkspaceKind(solution, solutionFile, solutionDirectory);
-
-            // In folder mode the workspace root can show up in the solution-file out-parameter instead
-            // of the directory one, so resolve the root from both values.
-            string workspaceRoot = ResolveWorkspaceDirectory(solutionDirectory, solutionFile);
-
-            switch (workspaceKind)
+            switch (workspace.Kind)
             {
                 case WorkspaceKind.Folder:
-                    return GetFolderOverview(workspaceRoot, maxProjects);
+                    return GetFolderOverview(workspace.WorkspaceRoot, maxProjects);
 
                 case WorkspaceKind.None:
                     return CreateEmptyOverview(WorkspaceKind.None, null);
 
                 default:
-                    return GetLoadedSolutionOverview(solution, workspaceRoot, solutionFile, maxProjects);
+                    return GetLoadedSolutionOverview(solution, workspace.WorkspaceRoot, workspace.SolutionFile, maxProjects);
             }
+        }
+
+        /// <summary>
+        /// Resolves what Visual Studio currently has open — solution file, plain folder or nothing —
+        /// together with the workspace root. Shared by all tools that must distinguish the two modes
+        /// (overview, build, test, …) so the detection logic exists exactly once.
+        /// Callers are responsible for being on the UI thread (the VS shell requires it); keeping the
+        /// check out of this method makes the detection unit-testable.
+        /// </summary>
+        public static WorkspaceContext ResolveWorkspace(IVsSolution solution, string fallbackWorkspaceRoot)
+        {
+            string solutionDirectory = null;
+            string solutionFile = null;
+
+            if (solution != null)
+            {
+                try
+                {
+                    solution.GetSolutionInfo(out solutionDirectory, out solutionFile, out string _);
+                }
+                catch (Exception ex)
+                {
+                    InternalLogger.Warn($"SolutionInspector: GetSolutionInfo failed: {ex.Message}");
+                }
+            }
+
+            // No solution service at all: fall back to a caller-provided folder root (folder mode),
+            // otherwise there is nothing to report.
+            if (solution == null)
+            {
+                string fallbackRoot = NormalizeDirectoryPath(fallbackWorkspaceRoot);
+                if (!string.IsNullOrEmpty(fallbackRoot) && IsExistingDirectory(fallbackRoot))
+                    return new WorkspaceContext(WorkspaceKind.Folder, null, fallbackRoot, fallbackRoot);
+
+                return new WorkspaceContext(WorkspaceKind.None, null, null, null);
+            }
+
+            WorkspaceKind kind = DetermineWorkspaceKind(solution, solutionFile, solutionDirectory);
+
+            // In folder mode the workspace root can show up in the solution-file out-parameter instead
+            // of the directory one, so resolve the root from both values.
+            string workspaceRoot = ResolveWorkspaceDirectory(solutionDirectory, solutionFile);
+
+            if (kind == WorkspaceKind.Solution && string.IsNullOrEmpty(workspaceRoot) && !string.IsNullOrEmpty(solutionFile))
+                workspaceRoot = NormalizeDirectoryPath(Path.GetDirectoryName(solutionFile));
+
+            return new WorkspaceContext(kind, solutionFile, solutionDirectory, workspaceRoot);
         }
 
         /// <summary>
@@ -167,7 +193,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common
         /// Root directory of the workspace. Folder mode sometimes reports the folder only in the
         /// solution-file out-parameter, so that value is used as a fallback.
         /// </summary>
-        private static string ResolveWorkspaceDirectory(string solutionDirectory, string solutionFile)
+        internal static string ResolveWorkspaceDirectory(string solutionDirectory, string solutionFile)
         {
             string directory = NormalizeDirectoryPath(solutionDirectory);
             if (!string.IsNullOrEmpty(directory) && IsExistingDirectory(directory))

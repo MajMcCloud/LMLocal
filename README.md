@@ -340,7 +340,7 @@ Open this from the extension's main menu. You’ll see all built‑in tools (for
 | `get_symbol_info` | Finds declarations and references to a symbol (class, method, etc.) across the solution, with line numbers and context. | C# only | Uses Roslyn |
 | `get_symbol_info_js` | Finds declarations and references to a symbol (class, method, etc.) across the solution, with line numbers and context. | JS only | only .js, .mjs, .cjs |
 | `inspect_type` | Inspects a fully qualified type from the open solution (source or referenced assemblies) and returns its full metadata. | C# only | Uses Roslyn. |
-| `build_solution` | Builds the currently open solution, including all its projects, or a specific project. | Any (MSBuild) | Uses MSBuild via Visual Studio. |
+| `build_solution` | Builds the currently open solution, including all its projects, or a specific project. In "open a folder" mode (no solution file) the folder is scanned for project files and they are built with `dotnet build` / MSBuild. | C#, VB.NET, F# (folder mode: managed projects only) | Solution mode uses the Visual Studio build engine; folder mode uses `dotnet build` (SDK-style) or `MSBuild.exe` (legacy), located via `vswhere` or `LMLOCAL_MSBUILD_PATH`. |
 | `run_tests` | Runs `dotnet test` for a specific `.csproj` and shows live output. | C# only | Requires the .NET SDK (`dotnet` CLI) installed on the machine; only for C# test projects. |
 
 
@@ -355,7 +355,12 @@ Open this from the extension's main menu. You’ll see all built‑in tools (for
 | `None` | Nothing is open (no solution, no folder). |
 | `Unknown` | Could not be determined (e.g. the VS shell does not expose the folder-mode property). |
 
+
 Folder mode prunes `bin`, `obj`, `.vs`, `.git`, `node_modules`, `packages` and similar directories, skips reparse points, and scans up to 8 directory levels.
+
+**`build_solution` in folder mode**
+
+`build_solution` accepts the same workspace kinds. In `Solution` mode it builds through the Visual Studio build engine (active solution configuration). In `Folder` mode there is no solution and no VS build engine, so the folder is scanned for project files and each managed project (`*.csproj`, `*.vbproj`, `*.fsproj`) is built with `dotnet build` (SDK-style) or `MSBuild.exe` (non-SDK). `project_name` may be a project name, a project file name or a (relative/absolute) project file path; without it every buildable project in the folder is built. The optional `configuration` parameter selects `Debug`/`Release` in folder mode. Project types that cannot be built this way (`*.vcxproj`, `*.sqlproj`, `*.shproj`, `*.wixproj`, `*.njsproj`, `*.jsproj`, `*.pyproj`) are reported in `skipped_projects`; `build_method` reports which engine ran.
 
 `*` **Automatic syntax check applies to:** C# and VB (via Roslyn), .js/.mjs/.cjs (via Acornima).
 

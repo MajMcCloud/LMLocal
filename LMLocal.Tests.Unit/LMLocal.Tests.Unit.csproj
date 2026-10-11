@@ -151,6 +151,7 @@
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ContentSearchMatcherTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\DeclarationMatcherTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ProjectMetadataProviderTests.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Projects\FolderProjectBuildSupportTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Projects\SdkProjectDetectorTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\QueryClassifierTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\SearchResultGrouperTests.cs" />

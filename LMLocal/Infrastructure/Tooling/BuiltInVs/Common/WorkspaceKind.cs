@@ -35,4 +35,35 @@
         /// <summary>Project files were discovered by scanning the open folder on disk (e.g. *.csproj, *.vcxproj).</summary>
         ProjectFilesOnDisk = 2
     }
+
+    /// <summary>
+    /// Result of resolving the active workspace: which kind of workspace VS has open, the solution file
+    /// (only for <see cref="WorkspaceKind.Solution"/>) and the root directory of the workspace.
+    /// In "open a folder" mode the root may be reported by <c>GetSolutionInfo</c> in either out-parameter,
+    /// so <see cref="WorkspaceRoot"/> is the value callers should use for path resolution.
+    /// </summary>
+    public sealed class WorkspaceContext
+    {
+        public WorkspaceKind Kind { get; }
+
+        /// <summary>Full path of the loaded solution file; null in folder / none mode.</summary>
+        public string SolutionFile { get; }
+
+        /// <summary>The directory value exactly as reported by <c>IVsSolution.GetSolutionInfo</c>.</summary>
+        public string SolutionDirectory { get; }
+
+        /// <summary>Normalized root directory of the workspace (solution directory or the open folder).</summary>
+        public string WorkspaceRoot { get; }
+
+        public bool IsSolution => Kind == WorkspaceKind.Solution;
+        public bool IsFolder => Kind == WorkspaceKind.Folder;
+
+        public WorkspaceContext(WorkspaceKind kind, string solutionFile, string solutionDirectory, string workspaceRoot)
+        {
+            Kind = kind;
+            SolutionFile = solutionFile;
+            SolutionDirectory = solutionDirectory;
+            WorkspaceRoot = workspaceRoot;
+        }
+    }
 }

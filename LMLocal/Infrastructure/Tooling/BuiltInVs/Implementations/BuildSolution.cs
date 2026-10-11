@@ -9,11 +9,14 @@ using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
 using LMLocal.Core.Common;
+using LMLocal.Infrastructure.Persistence;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Abstractions;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Common;
 using LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Projects;
+using LMLocal.Infrastructure.Tooling.BuiltInVs.Common.Testing;
 using Microsoft.VisualStudio.Shell;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
 {
@@ -22,6 +25,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
     internal class BuildSolution : IBuildSolution
     {
         private readonly IVsDependencies _vsDependencies;
+        private readonly IFileSystem _fileSystem;
         public ToolAccessLevel AccessLevel => ToolAccessLevel.Execution;
 
         public string ToolName => "build_solution";
@@ -62,9 +66,10 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
         private const int MaxReportedErrors = 25;
 
 
-        public BuildSolution(IVsDependencies vsDependencies)
+        public BuildSolution(IVsDependencies vsDependencies, IFileSystem fileSystem)
         {
             _vsDependencies = vsDependencies ?? throw new ArgumentNullException(nameof(vsDependencies));
+            _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         }
 
 
@@ -72,18 +77,12 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
-            if (!_vsDependencies.IsSolutionOpen)
-                return ErrorResponse("No solution is open.");
+            // Same detection as get_solution_overview: a plain folder ("open a folder" mode) is a valid
+            // workspace, it just has no solution file and therefore cannot be built through the VS build engine.
+            var workspace = SolutionInspector.ResolveWorkspace(_vsDependencies.GetSolution(), _vsDependencies.GetSolutionDirectory());
 
-            var dte = _vsDependencies.GetDTE();
-            if (dte == null)
-                return ErrorResponse("DTE service not available.");
-
-            if (dte.Solution.SolutionBuild.BuildState == vsBuildState.vsBuildStateInProgress)
-                return ErrorResponse("Build is already in progress.");
-
-            string solutionPath = dte.Solution.FullName;
-            string solutionName = Path.GetFileNameWithoutExtension(solutionPath);
+            if (workspace.Kind == WorkspaceKind.None)
+                return ErrorResponse("No solution or folder is open.", workspaceKind: WorkspaceKind.None);
 
             string projectName = null;
             if (parameters != null && parameters.TryGetValue("project_name", out var v) && v != null)
@@ -93,6 +92,32 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             if (parameters != null && parameters.TryGetValue("timeout_seconds", out var t) && t != null && int.TryParse(Convert.ToString(t), out int parsed) && parsed > 0)
                 timeoutSeconds = parsed;
 
+            if (workspace.Kind == WorkspaceKind.Folder)
+            {
+                try
+                {
+                    return await BuildFolderWorkspaceAsync(workspace, projectName, timeoutSeconds, parameters, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return ErrorResponse("Build was cancelled.", workspaceRoot: workspace.WorkspaceRoot, workspaceKind: WorkspaceKind.Folder);
+                }
+                catch (Exception ex)
+                {
+                    return ErrorResponse($"Build failed: {ex.Message}", workspaceRoot: workspace.WorkspaceRoot, workspaceKind: WorkspaceKind.Folder);
+                }
+            }
+
+            var dte = _vsDependencies.GetDTE();
+            if (dte == null)
+                return ErrorResponse("DTE service not available.", workspaceKind: workspace.Kind, workspaceRoot: workspace.WorkspaceRoot);
+
+            if (dte.Solution.SolutionBuild.BuildState == vsBuildState.vsBuildStateInProgress)
+                return ErrorResponse("Build is already in progress.", workspaceKind: workspace.Kind, workspaceRoot: workspace.WorkspaceRoot);
+
+            string solutionPath = dte.Solution.FullName;
+            string solutionName = Path.GetFileNameWithoutExtension(solutionPath);
+
             Project selectedProject = null;
             string projectUniqueName = null;
             string selectedProjectName = null;
@@ -100,18 +125,18 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             {
                 var matches = ProjectFinder.FindByName(dte.Solution, projectName);
                 if (matches.Count == 0)
-                    return ErrorResponse($"Project '{projectName}' not found in the open solution.", solutionName, solutionPath);
+                    return ErrorResponse($"Project '{projectName}' not found in the open solution.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
                 if (matches.Count > 1)
                 {
                     var names = string.Join(", ", matches.Select(p => ProjectFinder.SafeName(p, ProjectField.Name)));
-                    return ErrorResponse($"Project name '{projectName}' is ambiguous. Matches: {names}", solutionName, solutionPath);
+                    return ErrorResponse($"Project name '{projectName}' is ambiguous. Matches: {names}", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
                 }
 
                 selectedProject = matches[0];
                 projectUniqueName = ProjectFinder.SafeName(selectedProject, ProjectField.UniqueName);
                 selectedProjectName = ProjectFinder.SafeName(selectedProject, ProjectField.Name);
                 if (string.IsNullOrEmpty(projectUniqueName))
-                    return ErrorResponse($"Project '{projectName}' has no buildable UniqueName.", solutionName, solutionPath);
+                    return ErrorResponse($"Project '{projectName}' has no buildable UniqueName.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
             }
 
             var tcs = new TaskCompletionSource<bool>();
@@ -144,7 +169,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                 using (cancellationToken.Register(() => tcs.TrySetCanceled()))
                 {
                     if (cancellationToken.IsCancellationRequested)
-                        return ErrorResponse("Build was cancelled.", solutionName, solutionPath);
+                        return ErrorResponse("Build was cancelled.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
 
                     if (projectUniqueName == null)
                     {
@@ -153,7 +178,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                     else
                     {
                         if (!(dte.Solution.SolutionBuild.ActiveConfiguration is SolutionConfiguration2 activeConfig) || string.IsNullOrEmpty(activeConfig.Name))
-                            return ErrorResponse("No active solution configuration is available.", solutionName, solutionPath);
+                            return ErrorResponse("No active solution configuration is available.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
 
                         string solutionConfiguration = activeConfig.Name;
                         if (!string.IsNullOrEmpty(activeConfig.PlatformName))
@@ -171,16 +196,16 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                         if (completed != buildTask)
                         {
                             if (cancellationToken.IsCancellationRequested)
-                                return ErrorResponse("Build was cancelled.", solutionName, solutionPath);
+                                return ErrorResponse("Build was cancelled.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
                             return ErrorResponse(
                                 $"Build timed out after {timeoutSeconds} second(s). It may still be running in Visual Studio.",
-                                solutionName, solutionPath);
+                                solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
                         }
                     }
 
                     bool buildSucceeded = await buildTask;
                     if (cancellationToken.IsCancellationRequested)
-                        return ErrorResponse("Build was cancelled.", solutionName, solutionPath);
+                        return ErrorResponse("Build was cancelled.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
 
                     var messages = new List<BuildMessage>();
                     string errorDetail = buildSucceeded ? null : "Build failed. See messages for details.";
@@ -225,6 +250,9 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                     return new BuildSolutionResponse
                     {
                         Success = buildSucceeded,
+                        WorkspaceKind = workspace.Kind,
+                        WorkspaceRoot = workspace.WorkspaceRoot,
+                        BuildMethod = projectUniqueName == null ? "vs_solution_build" : "vs_project_build",
                         SolutionName = solutionName,
                         SolutionPath = solutionPath,
                         ProjectName = selectedProjectName,
@@ -236,17 +264,282 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             }
             catch (OperationCanceledException)
             {
-                return ErrorResponse("Build was cancelled.", solutionName, solutionPath);
+                return ErrorResponse("Build was cancelled.", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
             }
             catch (Exception ex)
             {
-                return ErrorResponse($"Build failed: {ex.Message}", solutionName, solutionPath);
+                return ErrorResponse($"Build failed: {ex.Message}", solutionName, solutionPath, workspace.Kind, workspace.WorkspaceRoot);
             }
             finally
             {
                 buildEvents.OnBuildDone -= buildDoneHandler;
             }
         }
+
+        // ------------------------------------------------------------------
+        // "Open a folder" mode: there is no solution file and no VS build engine,
+        // so the project files are discovered on disk and built with dotnet / MSBuild.
+        // ------------------------------------------------------------------
+
+        /// <summary>Cap for project files discovered in a folder workspace.</summary>
+        private const int MaxFolderProjects = 200;
+
+        /// <summary>How many project files are listed in a "project not found" message.</summary>
+        private const int MaxListedProjects = 15;
+
+        private async Task<object> BuildFolderWorkspaceAsync(
+            WorkspaceContext workspace,
+            string projectName,
+            int timeoutSeconds,
+            Dictionary<string, object> parameters,
+            CancellationToken cancellationToken)
+        {
+            string workspaceRoot = workspace.WorkspaceRoot;
+
+            if (string.IsNullOrEmpty(workspaceRoot) || !Directory.Exists(workspaceRoot))
+                return ErrorResponse($"Workspace folder '{workspaceRoot}' does not exist.", workspaceRoot: workspaceRoot, workspaceKind: WorkspaceKind.Folder);
+
+            string requestedConfiguration = null;
+            if (parameters != null && parameters.TryGetValue("configuration", out var c) && c != null)
+                requestedConfiguration = Convert.ToString(c);
+            string configuration = FolderBuildArguments.SanitizeConfiguration(requestedConfiguration);
+
+            var discovery = await Task.Run(() =>
+            {
+                bool truncatedFlag;
+                var found = FolderProjectSelector.Discover(workspaceRoot, out truncatedFlag, MaxFolderProjects);
+                return new { Projects = found, Truncated = truncatedFlag };
+            }, cancellationToken).ConfigureAwait(false);
+
+            var selection = FolderProjectSelector.Select(discovery.Projects, projectName, workspaceRoot);
+
+            if (selection.AmbiguousMatches.Count > 0)
+            {
+                var names = string.Join(", ", selection.AmbiguousMatches);
+                return ErrorResponse(
+                    $"Project name '{projectName}' is ambiguous. Matches: {names}. Pass the project file path instead.",
+                    workspaceRoot: workspaceRoot, workspaceKind: WorkspaceKind.Folder);
+            }
+
+            if (selection.Selected.Count == 0)
+                return NoBuildableProjectResponse(selection, discovery.Projects, projectName, workspaceRoot);
+
+            var buildMessages = new List<BuildMessage>();
+            var failedProjects = new List<string>();
+            var engines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // The timeout is a budget for the whole folder build, not per project.
+            var deadline = timeoutSeconds > 0 ? DateTime.UtcNow.AddSeconds(timeoutSeconds) : (DateTime?)null;
+
+            foreach (var project in selection.Selected)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int remainingSeconds = deadline.HasValue
+                    ? (int)Math.Ceiling((deadline.Value - DateTime.UtcNow).TotalSeconds)
+                    : timeoutSeconds;
+
+                if (deadline.HasValue && remainingSeconds <= 0)
+                {
+                    failedProjects.Add(project.RelativePath);
+                    buildMessages.Add(new BuildMessage
+                    {
+                        Project = project.RelativePath,
+                        Message = $"Not built: the {timeoutSeconds} second(s) build timeout was already reached."
+                    });
+                    continue;
+                }
+
+                var projectResult = await BuildProjectFileAsync(project, workspaceRoot, configuration, remainingSeconds, cancellationToken).ConfigureAwait(false);
+                engines.Add(projectResult.Engine);
+
+                foreach (var message in projectResult.Messages)
+                {
+                    if (message == null) continue;
+                    if (string.IsNullOrEmpty(message.Project))
+                        message.Project = project.RelativePath;
+                    buildMessages.Add(message);
+                }
+
+                if (!projectResult.Success)
+                    failedProjects.Add(project.RelativePath);
+            }
+
+            bool allSucceeded = failedProjects.Count == 0;
+
+            if (buildMessages.Count > MaxReportedErrors)
+                buildMessages.RemoveRange(MaxReportedErrors, buildMessages.Count - MaxReportedErrors);
+
+            string errorMessage = null;
+            if (!allSucceeded)
+            {
+                var errorBuilder = new System.Text.StringBuilder();
+                errorBuilder.Append($"Build failed for {failedProjects.Count} of {selection.Selected.Count} project(s): {string.Join(", ", failedProjects)}.");
+                if (buildMessages.Count == 0)
+                    errorBuilder.Append(" No error details were reported by the build tool.");
+                errorMessage = errorBuilder.ToString();
+            }
+
+            string buildMethod = engines.Count == 1
+                ? engines.First()
+                : string.Join("+", engines.OrderBy(e => e, StringComparer.Ordinal));
+
+            return new BuildSolutionResponse
+            {
+                Success = allSucceeded,
+                WorkspaceKind = WorkspaceKind.Folder,
+                WorkspaceRoot = workspaceRoot,
+                BuildMethod = buildMethod,
+                SolutionName = new DirectoryInfo(workspaceRoot).Name,
+                SolutionPath = null,
+                ProjectName = selection.Selected.Count == 1 ? selection.Selected[0].Name : null,
+                ProjectUniqueName = selection.Selected.Count == 1 ? selection.Selected[0].RelativePath : null,
+                SkippedProjects = selection.Skipped.Count > 0 ? selection.Skipped : null,
+                HasMoreResults = discovery.Truncated,
+                Messages = buildMessages,
+                ErrorMessage = errorMessage
+            };
+        }
+
+        private sealed class ProjectBuildResult
+        {
+            public bool Success { get; set; }
+            public string Engine { get; set; }
+            public List<BuildMessage> Messages { get; } = new List<BuildMessage>();
+        }
+
+        private async Task<ProjectBuildResult> BuildProjectFileAsync(
+            FolderProject project,
+            string workingDirectory,
+            string configuration,
+            int timeoutSeconds,
+            CancellationToken cancellationToken)
+        {
+            bool isSdkStyle = await SdkProjectDetector.IsSdkStyleAsync(_fileSystem, project.Path, cancellationToken).ConfigureAwait(false);
+
+            string executable = "dotnet";
+            string arguments;
+
+            if (isSdkStyle)
+            {
+                arguments = FolderBuildArguments.BuildDotnetArguments(project.Path, configuration);
+            }
+            else
+            {
+                // Legacy (non-SDK) managed projects need the full MSBuild, not the dotnet CLI.
+                string msBuildPath = await Task.Run(() => MsBuildLocator.FindMsBuildPath(), cancellationToken).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(msBuildPath))
+                {
+                    var result = new ProjectBuildResult { Success = false, Engine = "msbuild" };
+                    result.Messages.Add(new BuildMessage
+                    {
+                        Project = project.RelativePath,
+                        Message = $"'{project.RelativePath}' is not an SDK-style project and MSBuild.exe could not be located. " +
+                                  "Install Visual Studio Build Tools or set the LMLOCAL_MSBUILD_PATH environment variable."
+                    });
+                    return result;
+                }
+
+                executable = msBuildPath;
+                arguments = FolderBuildArguments.BuildMsBuildArguments(project.Path, configuration);
+            }
+
+            TimeSpan timeout = timeoutSeconds > 0 ? TimeSpan.FromSeconds(timeoutSeconds) : TimeSpan.FromSeconds(DefaultBuildTimeoutSeconds);
+
+            var runResult = await DotnetProcessRunner.RunAsync(arguments, workingDirectory, timeout, cancellationToken, executable: executable).ConfigureAwait(false);
+
+            var buildResult = new ProjectBuildResult
+            {
+                Success = runResult.ExitCode == 0 && !runResult.Cancelled && !runResult.TimedOut,
+                Engine = isSdkStyle ? "dotnet_build" : "msbuild"
+            };
+
+            if (buildResult.Success)
+                return buildResult;
+
+            string combinedOutput = CombineOutput(runResult);
+
+            if (!string.IsNullOrEmpty(combinedOutput))
+            {
+                var parsed = await Task.Run(() => ParseBuildOutput(combinedOutput), cancellationToken).ConfigureAwait(false);
+                buildResult.Messages.AddRange(parsed);
+            }
+
+            if (buildResult.Messages.Count == 0)
+            {
+                string reason = runResult.Cancelled
+                    ? "Build was cancelled."
+                    : runResult.TimedOut
+                        ? $"Build timed out after {timeout.TotalSeconds:0} second(s)."
+                        : $"Build failed with exit code {runResult.ExitCode}.";
+
+                string tail = TakeTailLines(combinedOutput, ErrorDetailTailLineCount);
+                buildResult.Messages.Add(new BuildMessage
+                {
+                    Project = project.RelativePath,
+                    Message = string.IsNullOrEmpty(tail) ? reason : reason + " Last output lines:\n" + tail
+                });
+            }
+
+            return buildResult;
+        }
+
+        private static string CombineOutput(DotnetProcessResult runResult)
+        {
+            var sb = new System.Text.StringBuilder();
+            if (!string.IsNullOrEmpty(runResult.StdOut)) sb.AppendLine(runResult.StdOut);
+            if (!string.IsNullOrEmpty(runResult.StdErr)) sb.AppendLine(runResult.StdErr);
+            return sb.ToString();
+        }
+
+        private static string TakeTailLines(string text, int lineCount)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+
+            var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            int start = Math.Max(0, lines.Length - lineCount);
+            var tail = new string[Math.Min(lineCount, lines.Length)];
+            Array.Copy(lines, start, tail, 0, tail.Length);
+            return string.Join(Environment.NewLine, tail);
+        }
+
+        private BuildSolutionResponse NoBuildableProjectResponse(FolderProjectSelection selection, List<FolderProject> discovered, string projectName, string workspaceRoot)
+        {
+            if (!string.IsNullOrWhiteSpace(projectName))
+            {
+                if (selection.NonBuildableSelected.Count > 0)
+                {
+                    string paths = string.Join(", ", selection.NonBuildableSelected);
+                    return ErrorResponse(
+                        $"Project '{projectName}' ({paths}) cannot be built in folder mode — only managed projects " +
+                        "(*.csproj, *.vbproj, *.fsproj) are supported without a solution.",
+                        workspaceRoot: workspaceRoot, workspaceKind: WorkspaceKind.Folder);
+                }
+
+                var known = (discovered ?? new List<FolderProject>())
+                    .Where(p => p != null)
+                    .Select(p => p.RelativePath)
+                    .Take(MaxListedProjects)
+                    .ToList();
+
+                string hint = known.Count > 0
+                    ? " Available project files: " + string.Join(", ", known)
+                    : " No project files were found in this folder.";
+                return ErrorResponse($"Project '{projectName}' not found in the open folder." + hint,
+                    workspaceRoot: workspaceRoot, workspaceKind: WorkspaceKind.Folder);
+            }
+
+            if (selection.Skipped.Count == 0)
+                return ErrorResponse(
+                    $"No project files (*.csproj, *.vbproj, *.fsproj, ...) were found under '{workspaceRoot}'.",
+                    workspaceRoot: workspaceRoot, workspaceKind: WorkspaceKind.Folder);
+
+            string skippedList = string.Join(", ", selection.Skipped.Take(MaxListedProjects));
+            return ErrorResponse(
+                "The open folder contains no project that can be built without a solution. Found but skipped: " + skippedList,
+                workspaceRoot: workspaceRoot, workspaceKind: WorkspaceKind.Folder);
+        }
+
 
         private static readonly Regex _buildErrorRegex = new Regex(
             @"^(?:\d+>)?" +
@@ -453,14 +746,21 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return ReadPaneTail(pane, BuildOutputTailLines);
         }
 
-        private static BuildSolutionResponse ErrorResponse(string message, string solutionName = null, string solutionPath = null)
+        private static BuildSolutionResponse ErrorResponse(
+            string message,
+            string solutionName = null,
+            string solutionPath = null,
+            WorkspaceKind workspaceKind = WorkspaceKind.Unknown,
+            string workspaceRoot = null)
         {
             return new BuildSolutionResponse
             {
                 Success = false,
                 ErrorMessage = message,
                 SolutionName = solutionName,
-                SolutionPath = solutionPath
+                SolutionPath = solutionPath,
+                WorkspaceKind = workspaceKind,
+                WorkspaceRoot = workspaceRoot
             };
         }
 
@@ -479,7 +779,11 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             if (result is BuildSolutionResponse resp)
             {
                 if (resp.Success)
+                {
+                    if (resp.WorkspaceKind == WorkspaceKind.Folder)
+                        return "Build completed (workspace folder, no solution file).";
                     return "Build completed.";
+                }
 
                 string firstLine = FirstLineOf(resp.ErrorMessage);
                 return string.IsNullOrWhiteSpace(firstLine)
@@ -501,7 +805,7 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
             return new ToolDefinition
             {
                 Name = ToolName,
-                Description = "Builds the currently opened VS solution asynchronously, or a single project when 'project_name' is specified. Use after making code changes to verify they compile. Fails if no solution is open, or a build is already in progress. Returns build status and any compilation errors with file/line/column details. Result is json.",
+                Description = "Builds the currently opened VS solution asynchronously, or a single project when 'project_name' is specified. Use after making code changes to verify they compile. Works in both workspace kinds reported by get_solution_overview: 'Solution' (built through the Visual Studio build engine) and 'Folder' (\"open a folder\" mode — no solution file; the folder is scanned for project files such as *.csproj/*.vcxproj and they are built with dotnet/msbuild instead, 'build_method' tells which). Fails only when nothing at all is open ('None'), or a build is already in progress. In folder mode 'project_name' may be a project name or a (relative) project file path; without it every buildable project found in the folder is built. Returns build status, 'workspace_kind', 'workspace_root', 'skipped_projects' (project types that cannot be built this way) and any compilation errors with file/line/column details. Result is json.",
                 Parameters = new ToolParameters
                 {
                     Type = "object",
@@ -510,7 +814,12 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
                         ["project_name"] = new ToolDetails
                         {
                             Type = "string",
-                            Description = "Name of the project to build instead of the whole solution. Accepts project name, unique name, or project file name."
+                            Description = "Name of the project to build instead of the whole solution. Accepts project name, unique name, or project file name. In folder mode a relative or absolute path to the project file is accepted as well."
+                        },
+                        ["configuration"] = new ToolDetails
+                        {
+                            Type = "string",
+                            Description = "Optional build configuration used in folder mode (dotnet/msbuild), e.g. 'Debug' or 'Release'. Default: Debug. Ignored in solution mode, where the active VS configuration is used."
                         },
                         ["timeout_seconds"] = new ToolDetails
                         {
@@ -529,6 +838,19 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
         [JsonProperty("success")]
         public bool Success { get; set; }
 
+        /// <summary>What VS has open: a solution file, a plain folder ("open a folder" mode), or nothing.</summary>
+        [JsonProperty("workspace_kind")]
+        [JsonConverter(typeof(StringEnumConverter))]
+        public WorkspaceKind WorkspaceKind { get; set; } = WorkspaceKind.Unknown;
+
+        /// <summary>Root directory of the workspace (solution directory or the open folder).</summary>
+        [JsonProperty("workspace_root", NullValueHandling = NullValueHandling.Ignore)]
+        public string WorkspaceRoot { get; set; }
+
+        /// <summary>Which build engine produced the result (VS build engine vs. dotnet/msbuild).</summary>
+        [JsonProperty("build_method", NullValueHandling = NullValueHandling.Ignore)]
+        public string BuildMethod { get; set; }
+
         [JsonProperty("solution_name")]
         public string SolutionName { get; set; }
 
@@ -540,6 +862,14 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Implementations
 
         [JsonProperty("project_unique_name")]
         public string ProjectUniqueName { get; set; }
+
+        /// <summary>Project files that were found but cannot be built this way (e.g. *.vcxproj in folder mode).</summary>
+        [JsonProperty("skipped_projects", NullValueHandling = NullValueHandling.Ignore)]
+        public List<string> SkippedProjects { get; set; }
+
+        /// <summary>True when the folder contains more project files than were considered.</summary>
+        [JsonProperty("has_more_results")]
+        public bool HasMoreResults { get; set; }
 
         [JsonProperty("error_message", NullValueHandling = NullValueHandling.Ignore)]
         public string ErrorMessage { get; set; }

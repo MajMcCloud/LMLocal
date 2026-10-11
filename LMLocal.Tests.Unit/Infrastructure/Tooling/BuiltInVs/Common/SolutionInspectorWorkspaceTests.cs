@@ -214,6 +214,104 @@ namespace LMLocal.Tests.Unit.Infrastructure.Tooling.BuiltInVs.Common
             Assert.That(SolutionInspector.IsSolutionFilePath(directoryNamedLikeSolution, _root), Is.False);
         }
 
+        // ---------- ResolveWorkspace (shared by overview / build / test tools) ----------
+
+        [Test]
+        public void ResolveWorkspace_SolutionLoaded_ExposesSolutionFileAndRoot()
+        {
+            string solutionFile = Path.Combine(_root, "MyApp.sln");
+            File.WriteAllText(solutionFile, "Microsoft Visual Studio Solution File");
+
+            var solution = new Mock<IVsSolution>();
+            string dir = _root, file = solutionFile, user = null;
+            solution.Setup(s => s.GetSolutionInfo(out dir, out file, out user)).Returns(S_OK);
+
+            var workspace = SolutionInspector.ResolveWorkspace(solution.Object, null);
+
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Solution));
+            Assert.That(workspace.IsSolution, Is.True);
+            Assert.That(workspace.SolutionFile, Is.EqualTo(solutionFile));
+            Assert.That(workspace.WorkspaceRoot, Is.EqualTo(_root));
+        }
+
+        [Test]
+        public void ResolveWorkspace_FolderModeWithProjectLoaded_UsesFolderAsRoot()
+        {
+            // "open a folder" + a project loaded inside it: GetSolutionInfo reports the project
+            // directory in the solution-file out-parameter.
+            string projectDirectory = Path.Combine(_root, "src", "MyApp");
+            Directory.CreateDirectory(projectDirectory);
+
+            var solution = new Mock<IVsSolution>();
+            object openFolder = true;
+            solution.Setup(s => s.GetProperty(It.IsAny<int>(), out openFolder)).Returns(S_OK);
+
+            string dir = _root, file = projectDirectory, user = null;
+            solution.Setup(s => s.GetSolutionInfo(out dir, out file, out user)).Returns(S_OK);
+
+            var workspace = SolutionInspector.ResolveWorkspace(solution.Object, null);
+
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Folder));
+            Assert.That(workspace.IsFolder, Is.True);
+            Assert.That(workspace.WorkspaceRoot, Is.EqualTo(_root));
+        }
+
+        [Test]
+        public void ResolveWorkspace_FolderModeRootOnlyInSolutionFileOut_UsesThatFolder()
+        {
+            var solution = new Mock<IVsSolution>();
+            object openFolder = true;
+            solution.Setup(s => s.GetProperty(It.IsAny<int>(), out openFolder)).Returns(S_OK);
+
+            string dir = null, file = _root, user = null;
+            solution.Setup(s => s.GetSolutionInfo(out dir, out file, out user)).Returns(S_OK);
+
+            var workspace = SolutionInspector.ResolveWorkspace(solution.Object, null);
+
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Folder));
+            Assert.That(workspace.WorkspaceRoot, Is.EqualTo(_root));
+        }
+
+        [Test]
+        public void ResolveWorkspace_NoSolutionService_FallsBackToProvidedRoot()
+        {
+            var workspace = SolutionInspector.ResolveWorkspace(null, _root);
+
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Folder));
+            Assert.That(workspace.WorkspaceRoot, Is.EqualTo(_root));
+        }
+
+        [Test]
+        public void ResolveWorkspace_NothingOpen_IsNone()
+        {
+            var solution = new Mock<IVsSolution>();
+            object openFolder = false;
+            solution.Setup(s => s.GetProperty(It.IsAny<int>(), out openFolder)).Returns(S_OK);
+
+            string dir = null, file = null, user = null;
+            solution.Setup(s => s.GetSolutionInfo(out dir, out file, out user)).Returns(S_OK);
+
+            var workspace = SolutionInspector.ResolveWorkspace(solution.Object, null);
+
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.None));
+            Assert.That(workspace.WorkspaceRoot, Is.Null);
+        }
+
+        [Test]
+        public void ResolveWorkspace_GetSolutionInfoThrows_DoesNotThrow()
+        {
+            var solution = new Mock<IVsSolution>();
+            solution.Setup(s => s.GetSolutionInfo(out It.Ref<string>.IsAny, out It.Ref<string>.IsAny, out It.Ref<string>.IsAny))
+                .Throws(new InvalidOperationException("shell failure"));
+
+            object openFolder = true;
+            solution.Setup(s => s.GetProperty(It.IsAny<int>(), out openFolder)).Returns(S_OK);
+
+            var workspace = SolutionInspector.ResolveWorkspace(solution.Object, _root);
+
+            Assert.That(workspace.Kind, Is.EqualTo(WorkspaceKind.Folder));
+        }
+
         // ---------- Directory pruning ----------
 
         [TestCase("bin", true)]
