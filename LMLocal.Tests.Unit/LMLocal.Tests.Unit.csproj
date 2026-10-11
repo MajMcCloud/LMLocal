@@ -156,6 +156,7 @@
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\SearchResultGrouperTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\SearchResultPaginatorTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\SolutionInspectorTests.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\SolutionInspectorWorkspaceTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Testing\TestArgumentsBuilderTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\Testing\TestOutputParserTests.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Implementations\BuildSolutionParseTests.cs" />

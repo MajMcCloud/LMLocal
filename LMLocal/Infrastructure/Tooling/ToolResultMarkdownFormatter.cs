@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using LMLocal.Application.Abstractions.Ports;
 using LMLocal.Application.SubAgents.ReadRefs;
@@ -110,8 +111,22 @@ namespace LMLocal.Infrastructure.Tooling
             var totalProjects = obj["total_projects"]?.Value<int>() ?? 0;
             var totalFiles = obj["total_files"]?.Value<int>() ?? 0;
             var hasMore = obj["has_more_results"]?.Value<bool>() == true;
+            var workspaceKind = obj["workspace_kind"]?.Value<string>();
 
-            sb.AppendLine($"**Solution:** {solutionName} ({totalProjects} {Pluralizer.Pluralize(totalProjects, "project", "projects")}, {totalFiles} {Pluralizer.Pluralize(totalFiles, "file", "files")})");
+            string label = string.Equals(workspaceKind, "Folder", StringComparison.OrdinalIgnoreCase) ? "Workspace folder" : "Solution";
+
+            sb.AppendLine($"**{label}:** {solutionName} ({totalProjects} {Pluralizer.Pluralize(totalProjects, "project", "projects")}, {totalFiles} {Pluralizer.Pluralize(totalFiles, "file", "files")})");
+
+            if (string.Equals(workspaceKind, "Folder", StringComparison.OrdinalIgnoreCase))
+            {
+                var workspaceRoot = obj["workspace_root"]?.Value<string>();
+                if (!string.IsNullOrEmpty(workspaceRoot))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"No solution file is open — projects were discovered from project files under `{workspaceRoot}`.");
+                }
+            }
+
             sb.AppendLine();
 
             if (obj["projects"] is JArray projects)

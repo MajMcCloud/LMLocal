@@ -108,6 +108,7 @@
     <Compile Include="Core\Models\ToolQueue.cs" />
     <Compile Include="Infrastructure\Persistence\ChatPersistenceServiceFactory.cs" />
     <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\ToolFileOpener.cs" />
+    <Compile Include="Infrastructure\Tooling\BuiltInVs\Common\WorkspaceKind.cs" />
     <Compile Include="UI\ChatInjectionService.cs" />
     <Compile Include="Commands\AddSummaryCommand.cs" />
     <Compile Include="Commands\AddUnitTestsCommand.cs" />

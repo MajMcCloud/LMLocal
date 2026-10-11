@@ -343,6 +343,20 @@ Open this from the extension's main menu. You’ll see all built‑in tools (for
 | `build_solution` | Builds the currently open solution, including all its projects, or a specific project. | Any (MSBuild) | Uses MSBuild via Visual Studio. |
 | `run_tests` | Runs `dotnet test` for a specific `.csproj` and shows live output. | C# only | Requires the .NET SDK (`dotnet` CLI) installed on the machine; only for C# test projects. |
 
+
+**`get_solution_overview` - workspace kinds**
+
+`workspace_kind` reports what Visual Studio actually has open:
+
+| Value | Meaning |
+|-------|---------|
+| `Solution` | A solution file (`.sln`) is loaded; projects come from the loaded solution (`discovery_mode = LoadedInSolution`). |
+| `Folder` | Only a working folder was opened - no solution file. The project overview is built separately by scanning the folder for project files (`*.csproj`, `*.vbproj`, `*.fsproj`, `*.vcxproj`, ...) with `discovery_mode = ProjectFilesOnDisk`; `top_level_directories` lists the folder's sub-directories. |
+| `None` | Nothing is open (no solution, no folder). |
+| `Unknown` | Could not be determined (e.g. the VS shell does not expose the folder-mode property). |
+
+Folder mode prunes `bin`, `obj`, `.vs`, `.git`, `node_modules`, `packages` and similar directories, skips reparse points, and scans up to 8 directory levels.
+
 `*` **Automatic syntax check applies to:** C# and VB (via Roslyn), .js/.mjs/.cjs (via Acornima).
 
 

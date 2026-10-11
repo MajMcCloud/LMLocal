@@ -76,6 +76,21 @@ namespace LMLocal.Infrastructure.Tooling.BuiltInVs.Common
 
         public IVsSolution GetSolution()
         {
+            // The cached instance is cleared on solution close (OnQueryCloseSolution). When a plain
+            // folder is opened the solution-open event may not re-populate it, so re-acquire the
+            // service on demand. SVsSolution is always available, also in "open a folder" mode —
+            // it simply has no solution file.
+            if (_solution == null)
+            {
+                try
+                {
+                    _solution = ServiceProvider.GlobalProvider.GetService(typeof(SVsSolution)) as IVsSolution;
+                }
+                catch (Exception ex)
+                {
+                    InternalLogger.Warn($"VsDependencies: Failed to re-acquire IVsSolution: {ex.Message}");
+                }
+            }
             return _solution;
         }
 
